@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: lumora-user-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${LUMORA_NACOS_ADDR:127.0.0.1:8848}
+
+server:
+  port: ${LUMORA_USER_PORT:46101}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: lumora-model-gateway-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${LUMORA_NACOS_ADDR:127.0.0.1:8848}
+
+server:
+  port: ${LUMORA_MODEL_GATEWAY_PORT:46104}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

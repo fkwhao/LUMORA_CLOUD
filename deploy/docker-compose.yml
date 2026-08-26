@@ -1,0 +1,31 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lumora_cloud}
+      MYSQL_USER: ${MYSQL_USER:-lumora}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in deploy/.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in deploy/.env}
+    ports:
+      - "43306:3306"
+    volumes:
+      - lumora-mysql:/var/lib/mysql
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "46379:6379"
+    volumes:
+      - lumora-redis:/data
+
+  nacos:
+    image: nacos/nacos-server:v3.0.3
+    environment:
+      MODE: standalone
+    ports:
+      - "48848:8848"
+      - "49848:9848"
+
+volumes:
+  lumora-mysql:
+  lumora-redis:
