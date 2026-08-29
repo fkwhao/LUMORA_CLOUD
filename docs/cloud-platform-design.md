@@ -2,9 +2,16 @@
 
 ## 1. 文档状态
 
+最后同步：2026-08-29。
+
 本文记录 LUMORA 云端能力的目标设计。当前 `LUMORA_CLOUD` 已建立后端 Maven 多模块、统一
-React 前端和本地部署配置骨架；登录、套餐、模型代理和计费闭环仍未实现。工程目录、模块边界
-和默认端口参见同目录下的 `architecture.md`。
+React 前端和本地部署配置。User Service、Gateway 身份链路以及网页注册、登录、刷新和退出已经完成；
+Billing Service 的套餐、订阅周额度和模型请求额度状态机已经实现；Model Catalog Service 的供应商、
+模型草稿、发布版本、启停、版本历史和缓存读取也已实现；管理端已经接入上述模型目录能力。Model
+Gateway 的三种协议代理、额度预占、并发控制、Usage 结算与失败补偿首版已经完成；套餐订单、开发环境
+测试支付和购买订阅发放闭环也已实现；管理总览已经接入 User、Billing 与 Model Catalog 各自维护的
+真实运营统计。钱包、真实第三方支付渠道和 Desktop 接入仍待实现。工程目录、模块边界和默认端口参见同目录下的
+`architecture.md`。
 
 本阶段只确定云端技术边界，不实现 Desktop Hook 生命周期、自动化或操作系统沙箱。
 
@@ -36,7 +43,8 @@ Desktop 登录是可选能力，登录状态与模型来源相互独立：
 - 包月套餐：按月获得权益，并在套餐有效期内按周生成额度周期；本周额度耗尽后等待下一周刷新。
 - 用量付费：用户钱包预先获得余额，平台按照实际模型用量扣费。
 
-项目不接入第三方支付。钱包充值由管理员手动发放，但仍必须经过幂等接口和不可变账本，
+当前阶段不接入第三方支付，仅在显式开启的开发环境提供不会产生真实扣款的 MOCK 支付。钱包充值后续
+由管理员手动发放，但仍必须经过幂等接口和不可变账本，
 不能直接修改数据库余额。
 
 Desktop 只实现原生登录、退出、登录状态恢复、当前套餐、套餐额度、刷新时间和用量查询，不实现
@@ -99,6 +107,15 @@ LUMORA_CLOUD/
 不得通过 `cloud-common` 共享数据库实体或 Mapper。跨服务只共享稳定 DTO 和接口契约，
 各服务不能直接写入其他服务拥有的表。
 
+数据库结构同样遵循服务所有权：`user-service`、`billing-service` 和 `model-catalog-service` 分别
+维护 `lumora_user`、`lumora_billing` 和 `lumora_model_catalog`。建表及后续结构变更放在所属服务的
+`src/main/resources/db/migration/` 中，以 Flyway 的 `V<版本>__<说明>.sql` 脚本随服务版本演进。
+当前没有持久化职责的 Gateway 和 `model-gateway-service` 不创建业务表，也不维护其他服务的迁移。
+
+`deploy/mysql/init/` 是部署引导目录，仅在 MySQL 数据目录为空时创建数据库并配置基础权限；它不是
+业务表版本管理机制。仓库根目录若以后增加 `database/`，只用于数据库说明、结构快照和人工运维
+脚本，自动迁移仍以各服务的 Flyway 目录为准。
+
 ## 5. 服务职责
 
 ### 5.1 Cloud Gateway
@@ -116,6 +133,24 @@ LUMORA_CLOUD/
 - Redis Session 与短期登录状态。
 - Refresh Token 的轮换、撤销和登录审计。
 
+当前认证实现采用以下边界：
+
+```text
+浏览器 / Desktop ──Access Token──→ Gateway 验签与撤销检查
+                                     └──可信 X-Lumora-* 身份头──→ 业务服务
+
+业务服务 A ──OpenFeign：Access Token + Request ID + 可信用户上下文──→ 业务服务 B
+```
+
+- Access Token 是 15 分钟的 HS256 JWT，包含用户、设备会话、设备、客户端类型和角色声明。
+- Refresh Token 对应最长 30 天的设备会话，只保存 SHA-256 哈希并执行一次性轮换；旧 Token 重放会
+  撤销整条会话链。网页端通过 HttpOnly、SameSite Cookie 保存，Desktop 后续由 Electron Main 写入
+  操作系统受保护存储。
+- Gateway 先删除客户端自行提交的 `X-Lumora-*` 身份头，再根据已验签 JWT 注入可信上下文；退出会话
+  通过 Redis 撤销标记立即拦截尚未自然过期的 Access Token。
+- OpenFeign 不复制全部请求头，只白名单传递 `Authorization`、Request ID 和内部确认过的用户上下文；
+  Cookie 与 Refresh Token 不进入服务间调用。
+
 Model Gateway 不应通过 OpenFeign 在每次模型请求中同步查询完整用户资料。Access Token
 应支持本地验签；需要强制注销或封禁时再结合 Redis Session/撤销状态判断。
 
@@ -125,10 +160,15 @@ Desktop 云端凭据应由 Electron Main 持有并写入操作系统受保护存
 
 ### 5.3 Billing Service
 
-- 套餐、套餐版本、用户权益和周额度桶。
+- 套餐、套餐版本、购买订单、支付确认、用户权益和周额度桶。
 - 钱包、管理员手动充值和余额流水。
 - 模型请求额度预占、实际结算和多余预占释放。
 - 用量记录、价格快照、账单查询和定时对账。
+
+当前实现已覆盖套餐及不可变价格/周额度版本、幂等购买订单、开发环境测试支付、购买订阅发放与续费
+顺延、管理端用户查找、管理员幂等发放订阅、周额度桶、原子预占/结算/释放、超额待对账、过期预占
+自动释放、用量记录和不可变额度账本；管理端可以查看套餐历史版本、最近订阅和最近订单。钱包、管理员
+充值及真实支付渠道仍属于后续阶段，不与当前闭环混在一起实现。
 
 钱包与用量扣减首版不拆成两个微服务。一次结算通常需要同时改变额度、余额、预占状态和
 账本，过早拆分会立即引入跨服务金额事务。未来接入真实支付渠道时，再评估独立
@@ -141,8 +181,17 @@ Desktop 云端凭据应由 Electron Main 持有并写入操作系统受保护存
 - 成本价、销售价、价格版本和套餐可见范围。
 - 模型配置的草稿、发布、停用和版本查询。
 
-Provider Key 只保存在服务端 Secret Manager 或受保护配置中，不能返回 Desktop、浏览器或
-Python Agent。
+Provider Key 只保存在服务端 Secret Manager 或加密凭据表中，不能返回 Desktop、浏览器或
+Python Agent。管理端只允许写入和轮换，后续查询仅返回掩码、指纹、版本和轮换时间。
+
+当前实现由 Model Catalog 使用 AES-256-GCM 和随机 nonce 加密 Provider Key，平台级 32 字节主密钥
+通过 `LUMORA_CREDENTIAL_MASTER_KEY` 注入且不进入 Nacos。数据库中的 `credential_reference` 只定位
+密文记录；Model Gateway 使用内部服务身份短时读取解密结果，内部响应设置 `no-store`。凭据创建、
+轮换和从旧环境变量引用迁移都会写入不含明文的审计记录。模型配置
+采用“一个可编辑草稿 + 不可变发布历史”：发布时在同一事务中锁定模型主记录、归档旧发布版本并发布
+新版本；revision 用于识别管理端过期写入，生成列唯一索引从数据库层保证每个模型最多一个草稿和一个
+发布版本。普通用户与 Model Gateway 读取 Redis 发布快照，MySQL 是最终事实；写事务提交后才更新缓存
+generation 并驱逐旧快照。
 
 ### 5.5 Model Gateway Service
 
@@ -152,6 +201,29 @@ Python Agent。
 - 使用 WebClient 调用供应商 API 并处理 SSE/流式响应。
 - 解析供应商返回的权威 TokenUsage，并生成唯一用量事件。
 - 缓存已发布模型配置，不在每次请求中同步调用 Model Catalog Service。
+
+Model Gateway 在统一 Cloud Base URL 下提供 `/chat/completions`、`/responses` 和 `/messages`
+三个入口，分别兼容 OpenAI Chat Completions、OpenAI Responses 与 Anthropic Messages，均支持普通
+JSON 和 SSE。客户端必须携带稳定的 `X-Lumora-Client-Request-Id`，重试时复用同一个值。一次请求
+按以下状态流转：
+
+```text
+Gateway 可信身份 → 请求租约/用户与模型并发许可 → Catalog 发布快照
+  → Billing 最大额度预占 → Provider WebClient → 权威 Usage 解析
+  → Billing 实际结算 → 释放租约与并发许可
+```
+
+请求租约和并发许可均保存在 Redis，使用 Lua 完成原子获取、续期和释放，支持多实例部署。Billing
+预占使用确定性请求 ID；如果同一请求已预占过，Model Gateway 不会再次调用供应商。供应商明确拒绝
+时释放额度；超时、连接中断、流提前结束或缺少终态 Usage 时标记待对账。Billing 暂时不可用时，
+恢复命令写入 Redis，由后台任务继续执行幂等结算、释放或待对账操作。
+
+Cloud 支持 `OPENAI_COMPATIBLE`、`RESPONSES` 和 `ANTHROPIC` Provider。管理端创建 Provider 时直接
+提交 API Key；API Key 只以密文进入凭据表，不进入模型版本、Redis 发布快照、Nacos、日志或下游响应。
+旧环境变量引用仅作为已有 Provider 的兼容回退。凭据轮换保持引用稳定，不要求重新发布模型；Model
+Gateway 遇到上游 401/403 会清除短时凭据缓存并重新读取后重试一次。模型计价至少配置
+一种正向 Token 单价或最小请求额度，预占上限按上下文窗口、最大输出和最高相关单价保守计算，实际
+扣减以供应商终态 Usage 为准。
 
 OpenFeign 与 WebClient 不互相替代：OpenFeign 用于内部短时控制调用；WebClient 用于连接
 模型供应商并持续消费流式 HTTP 响应。
@@ -206,6 +278,27 @@ Admin 不是独立业务微服务。管理能力由各数据所有者提供：
 Dashboard 聚合明显复杂时，才增加只做查询聚合的 `admin-bff`；它不拥有业务数据，也不执行
 充值、扣费或模型配置规则。
 
+当前管理端使用 `/admin/billing` 管理套餐版本与订阅发放，使用 `/admin/models` 管理模型草稿、能力、
+成本、套餐额度费率、发布、启停和历史版本，使用 `/admin/providers` 管理供应商连接及加密 API Key。
+套餐页面调用 `/api/admin/billing/**` 和只读用户查询接口，模型页面调用 `/api/admin/catalog/**`；所有写入
+继续由后端强制校验管理员角色，模型编辑还使用 revision 乐观并发条件。
+
+`/admin` 运营总览通过 `/api/admin/users/statistics`、`/api/admin/billing/statistics` 和
+`/api/admin/catalog/statistics` 并行读取各数据所有者的精确聚合结果，不跨库查询，也不使用最近记录在
+浏览器端推算全量数据。统计覆盖用户与有效会话、订单与分币种收入、有效订阅、今日权威 Usage、供应商、
+当前可用模型、草稿和历史版本。单个领域暂时不可用时页面保留其他领域结果；日/月边界统一为
+`Asia/Shanghai`。没有可靠失败事实记录前，不展示推算出的模型调用失败率。
+
+用户控制台的 `/console`、`/console/usage`、`/console/ledger`、`/console/plans` 与 `/console/orders` 已分别接入实时套餐概览、
+周期额度、最近用量、额度流水、已发布套餐目录和购买订单。历史接口当前最多返回最近 100 条记录，因此页面明确
+按“近期记录”展示，不将客户端聚合值伪装成完整账期总量；当前额度桶的 granted、reserved、consumed
+和 remaining 仍由 Billing Service 返回精确值。订单详情页仅在后端明确声明 MOCK 可用时显示测试支付，
+并明确提示其不会真实扣款。
+
+前端组件体系采用 HeroUI v3 和 Tailwind CSS v4。HeroUI 用于统一按钮、表单、表格、Tabs、Drawer、
+Modal 等基础交互和可访问性行为。首版采用 HeroUI 原生默认暗色主题和组件外观，控制台信息架构、
+数据图表以及少量 Lumora 标识由项目自身维护，不额外建设高度风格化的视觉组件体系。
+
 Desktop 打开用户控制台时，Renderer 只能向 Electron Main 请求打开预先配置且通过 HTTPS
 域名/路径白名单校验的 URL，再由 Main 使用系统默认浏览器打开。不得让 Renderer 直接打开任意
 外部地址，也不得把 Desktop Access Token、Refresh Token 或 Session 参数附加到控制台 URL。
@@ -220,7 +313,22 @@ Desktop 打开用户控制台时，Renderer 只能向 Electron Main 请求打开
 - 必须以数据库唯一约束保证同一权益、同一周期只创建一个额度桶；Redis 锁只用于降低并发，
   不能代替数据库幂等约束。
 
-周周期究竟采用自然周还是从权益生效时间起每七天计算，在实现前仍需确定。
+周周期采用“从权益生效时刻起连续每七天”计算，而不是自然周。这样首个周期不会被自然周边界截短，
+也不会因服务器时区变化产生歧义；最后一个周期在权益结束时刻截断。
+
+购买与续费共用订单状态机：
+
+```text
+PENDING_PAYMENT ──支付确认──→ FULFILLED ──→ 创建且仅创建一个 PURCHASE 订阅
+       ├──用户取消──→ CANCELED
+       └──超过截止时间──→ EXPIRED
+```
+
+下单时冻结套餐版本、展示名称、金额和币种；`(user_id, idempotency_key)` 唯一约束负责抵御浏览器或网络
+重试。支付确认锁定订单行，支付记录、订阅创建与订单完成在一个本地事务中提交；同一订单重复确认返回
+已有结果。一个用户同时购买或续费时，以 Billing Account 行锁串行化订阅排期，新订阅从当前及未来
+订阅的最晚结束时间开始，不覆盖现有权益。真实支付接入后只能由校验过签名和金额的服务端回调推进
+订单，浏览器重定向结果不能作为到账事实。
 
 ### 7.2 用量付费
 
@@ -316,11 +424,13 @@ Desktop 领域模型预留以下类型：
 ## 11. 实施顺序
 
 1. 工程基线（已完成）：建立 Maven 多模块、统一 React 前端、Nacos 与 Cloud Gateway 骨架。
-2. 实现 User Service、登录会话、角色和三类 API 边界。
-3. 实现 Billing Service 的套餐、周额度、钱包、账本和幂等状态机。
-4. 实现 Model Catalog Service 和模型配置发布版本。
-5. 实现 Model Gateway 的预占、WebClient 流式代理、Usage 结算和故障补偿。
-6. 将 `frontend` 接入真实 API，完善网页用户控制台与管理员页面，在网页端承载购买、续费、充值和套餐管理。
+2. User Service、登录会话、角色、Gateway 身份传递和网页登录（已完成）。
+3. Billing Service 套餐、订单、开发环境测试支付、周额度、账本和幂等状态机（已完成）；钱包、充值与真实支付后续单独实现。
+4. 实现 Model Catalog Service、模型配置发布版本和对应管理页面（已完成）。
+5. 实现 Model Gateway 的预占、WebClient 流式代理、Usage 结算和故障补偿（首版已完成）。
+6. 将 `frontend` 的套餐、用量和管理页面接入真实 API，在网页端承载购买、续费、充值和套餐管理
+   （登录、会话恢复、管理端套餐版本/订阅发放/订单观测/真实运营统计、用户侧套餐/额度/用量/订单和
+   开发测试支付已完成；充值与真实支付待实现）。
 7. 将 Desktop 接入可选登录、只读套餐/额度/用量、外部控制台入口和
    `LOCAL_BYOK/CLOUD_MANAGED` 模型来源切换。
 8. 完成负载与故障验证后，再评估消息队列、独立 Payment Service 或 Cloud Chat。

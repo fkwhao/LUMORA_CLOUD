@@ -1,0 +1,53 @@
+# Group: LUMORA_CLOUD
+# Shared development configuration. Secrets remain in backend/.env and are
+# resolved from environment variables when each application starts.
+spring:
+  data:
+    redis:
+      host: ${LUMORA_REDIS_HOST:192.168.100.132}
+      port: ${LUMORA_REDIS_PORT:6379}
+      password: ${LUMORA_REDIS_PASSWORD}
+      timeout: 3000ms
+      connect-timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+  rabbitmq:
+    host: ${LUMORA_RABBITMQ_HOST:192.168.100.132}
+    port: ${LUMORA_RABBITMQ_PORT:5672}
+    virtual-host: ${LUMORA_RABBITMQ_VHOST:/lumora}
+    username: ${LUMORA_RABBITMQ_USERNAME:lumora}
+    password: ${LUMORA_RABBITMQ_PASSWORD}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        concurrency: 1
+        max-concurrency: 3
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+  cloud:
+    sentinel:
+      transport:
+        dashboard: ${LUMORA_SENTINEL_DASHBOARD:192.168.100.132:8858}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+lumora:
+  auth:
+    jwt:
+      issuer: lumora-cloud
+      audience: lumora-cloud-api

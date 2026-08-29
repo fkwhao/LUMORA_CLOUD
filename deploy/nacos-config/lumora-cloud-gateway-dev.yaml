@@ -1,0 +1,31 @@
+# Group: LUMORA_CLOUD
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          discovery:
+            locator:
+              enabled: false
+              lower-case-service-id: true
+          routes:
+            - id: lumora-user-service
+              uri: lb://lumora-user-service
+              predicates:
+                - Path=/api/app/auth/**,/api/app/users/**,/api/admin/users/**
+            - id: lumora-billing-service
+              uri: lb://lumora-billing-service
+              predicates:
+                - Path=/api/app/billing/**,/api/admin/billing/**
+            - id: lumora-model-catalog-service
+              uri: lb://lumora-model-catalog-service
+              predicates:
+                - Path=/api/app/catalog/**,/api/admin/catalog/**
+            - id: lumora-model-gateway-service
+              uri: lb://lumora-model-gateway-service
+              predicates:
+                - Path=/api/app/model/**
+
+logging:
+  level:
+    com.lumora.cloud.gateway: info

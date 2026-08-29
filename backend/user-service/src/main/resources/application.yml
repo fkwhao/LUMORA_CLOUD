@@ -1,4 +1,8 @@
 spring:
+  config:
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
+  profiles:
+    default: dev
   application:
     name: lumora-user-service
   cloud:
@@ -14,3 +18,10 @@ management:
     web:
       exposure:
         include: health,info
+
+lumora:
+  security:
+    internal-token: ${LUMORA_INTERNAL_TOKEN}
+  auth:
+    jwt:
+      secret: ${LUMORA_JWT_SECRET}

@@ -11,6 +11,8 @@ frontend/.vite-temp/
 frontend/.env.local
 frontend/*.tsbuildinfo
 
+deploy/data/
+
 .env
 .env.*
 !.env.example

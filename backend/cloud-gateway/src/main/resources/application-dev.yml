@@ -1,0 +1,16 @@
+spring:
+  config:
+    import:
+      - nacos:lumora-common-dev.yaml?group=LUMORA_CLOUD&refreshEnabled=true
+      - nacos:lumora-cloud-gateway-dev.yaml?group=LUMORA_CLOUD&refreshEnabled=true
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${LUMORA_NACOS_ADDR:192.168.100.132:8848}
+        username: ${LUMORA_NACOS_USERNAME:nacos}
+        password: ${LUMORA_NACOS_PASSWORD}
+      config:
+        server-addr: ${LUMORA_NACOS_ADDR:192.168.100.132:8848}
+        username: ${LUMORA_NACOS_USERNAME:nacos}
+        password: ${LUMORA_NACOS_PASSWORD}
+        group: LUMORA_CLOUD

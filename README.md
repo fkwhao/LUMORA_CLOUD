@@ -11,18 +11,24 @@ LUMORA_CLOUD/
 │   ├── cloud-gateway/
 │   └── *-service/
 ├── frontend/                   # React/Vite 用户控制台与管理端
-├── deploy/                     # Nginx 与本地基础设施配置
+├── deploy/                     # 虚拟机中间件 Compose 与 Nginx 配置
 └── docs/                       # 整个平台的架构说明
 ```
 
 ## 当前可浏览内容
 
-前端已经提供四个演示入口：
+前端已经提供以下入口：
 
 - `http://127.0.0.1:5175/login`
 - `http://127.0.0.1:5175/console`
+- `http://127.0.0.1:5175/console/usage`
+- `http://127.0.0.1:5175/console/ledger`
 - `http://127.0.0.1:5175/console/plans`
+- `http://127.0.0.1:5175/console/orders`
 - `http://127.0.0.1:5175/admin`
+- `http://127.0.0.1:5175/admin/billing`
+- `http://127.0.0.1:5175/admin/models`
+- `http://127.0.0.1:5175/admin/providers`
 
 ```powershell
 cd frontend
@@ -30,8 +36,15 @@ pnpm install
 pnpm dev
 ```
 
-页面目前使用演示数据，登录提交只用于预览页面流转。后端只创建了服务边界和启动入口；旧版
-单体 Demo 已废弃，业务能力将按当前微服务边界重新实现。
+网页注册、登录、会话恢复和退出已经连接 Cloud Gateway 与 User Service；用户侧套餐、周期额度、用量、
+额度流水、套餐目录和订单已经连接 Billing Service；运营总览已接入 User、Billing 与 Model Catalog 的
+真实领域统计。后端已经完成用户认证闭环、
+Billing Service 的套餐、额度、订单与开发环境测试支付状态机，
+Model Catalog Service 的供应商与模型发布，以及 Model Gateway 首版调用闭环：模型解析、额度预占、
+并发控制、Chat Completions / Responses / Anthropic Messages JSON/SSE 代理、权威 Usage 结算和
+失败补偿。管理端已支持套餐与价格版本、用户查找、幂等订阅发放，以及模型供应商、加密 API Key、
+模型能力、成本、套餐额度费率、草稿、发布、启停和历史版本管理。钱包、真实第三方支付渠道和 Desktop
+云端模型适配仍按当前微服务边界继续实现。旧版单体 Demo 已废弃。
 
 ## 产品边界
 
@@ -44,5 +57,8 @@ pnpm dev
 
 详细资料见 [工程架构](docs/architecture.md) 和 [云端平台设计](docs/cloud-platform-design.md)。
 
-本地启动 `deploy/docker-compose.yml` 前，将 `deploy/.env.example` 复制为 `deploy/.env` 并替换其中的
-本地数据库密码。真实 `.env` 文件已加入 Git 忽略规则，不应提交到仓库。
+中间件部署到虚拟机 `192.168.100.132`，Java 服务开发阶段仍在本机运行。将
+`deploy/.env.example` 复制为虚拟机上的 `deploy/.env` 并替换全部密码和密钥后，可以通过
+`docker compose up -d --build` 一次启动。真实 `.env` 和 `deploy/data/` 已加入 Git 忽略规则，
+不应提交到仓库；Sentinel JAR 会直接封装进本地镜像，不会落到宿主机目录。完整步骤见
+[中间件部署说明](deploy/README.md)。

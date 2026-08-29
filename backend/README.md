@@ -8,9 +8,119 @@ backend/
 ├── cloud-api/                  # Feign Client 与跨服务 DTO 契约
 ├── cloud-gateway/              # API 入口、鉴权上下文与粗粒度限流
 ├── user-service/               # 登录、设备会话与角色
-├── billing-service/            # 套餐、额度、钱包、预占与账本
+├── billing-service/            # 套餐、周额度、预占结算与账本
 ├── model-catalog-service/      # 模型、价格版本与发布配置
 └── model-gateway-service/      # 流式代理、权威 Usage 与结算编排
 ```
 
-当前只创建服务边界、启动入口和配置占位。业务表、认证和计费状态机将在后续迭代实现。
+当前已经完成 User Service 的注册、登录、Refresh Token 轮换、退出、用户信息、角色与审计，以及
+Gateway 的 JWT 校验、会话撤销检查和可信身份头注入。Billing Service 已完成套餐及版本、管理员
+发放订阅、购买订单、开发环境测试支付、购买后订阅发放/顺延、七天额度桶、额度预占/结算/释放、
+超额待对账、过期预占自动释放、用量记录和不可变账本。
+Model Catalog Service 也已完成供应商管理、模型草稿、发布版本、启停、用户可见目录与内部解析接口。
+Model Gateway 已完成 Chat Completions、OpenAI Responses 与 Anthropic Messages 调用闭环，支持
+普通 JSON 与 SSE、分布式并发限制、请求幂等、额度预占、权威 Usage 结算以及失败补偿。钱包与真实
+第三方支付渠道留在后续迭代。
+
+Billing 对外接口按权限分为：
+
+- `/api/app/billing/plans|overview|history`：已登录用户及 Desktop 的套餐、额度与历史查询。
+- `/api/app/billing/orders/**`：网页用户控制台幂等创建订单、查询/取消订单和开发环境测试支付。
+- `/api/app/billing/payment-capabilities`：返回当前环境实际启用的支付方式；生产环境不得启用 `MOCK`。
+- `/api/admin/billing/plans/**`：管理员创建套餐、发布新的价格/周额度版本并查看历史版本。
+- `/api/admin/billing/subscriptions`、`/subscriptions/grant`：查询最近订阅并使用幂等引用发放套餐。
+- `/api/admin/billing/orders`：管理员只读查看最近 100 条购买订单。
+- `/api/admin/billing/statistics`：精确统计有效订阅、待支付订单、本月分币种收入和今日权威 Usage。
+- `/api/admin/users?query=`：按邮箱前缀或显示名称查找发放目标，不跨服务复制用户数据。
+- `/api/admin/users/statistics`：精确统计用户状态、本月新增用户和未过期活跃会话。
+- `/internal/billing/reservations/**`：只允许 Model Gateway 使用内部服务凭据调用的预占、结算、释放
+  与待对账接口；公共 DTO 与 Feign Client 位于 `cloud-api`。
+
+Model Catalog 对外接口按权限分为：
+
+- `/api/app/catalog/models`：登录用户与 Desktop 可选择的已发布模型，不返回上游地址或密钥引用。
+- `/api/admin/catalog/providers|models/**`：管理员维护供应商、加密凭据、草稿、发布版本和启停状态。
+- `/api/admin/catalog/statistics`：精确统计供应商、模型定义、当前用户可见模型、草稿和历史版本。
+- `/internal/catalog/models/**`：只允许 Model Gateway 解析完整上游路由与当次锁定的计价版本。
+- `/internal/catalog/credentials/**`：只允许 Model Gateway 短时读取解密后的托管凭据，响应禁止缓存。
+
+Model Gateway 对外提供：
+
+- `POST /api/app/model/v1/chat/completions`：登录用户使用 Lumora 套餐调用已发布模型。
+- `POST /api/app/model/v1/responses`：以 OpenAI Responses 协议调用已发布模型。
+- `POST /api/app/model/v1/messages`：以 Anthropic Messages 协议调用已发布模型。
+- 客户端必须为每次逻辑调用提供稳定的 `X-Lumora-Client-Request-Id`；重试复用同一个值。
+- Model Gateway 使用请求租约阻止同一请求并发访问供应商，使用 Redis Lua 信号量限制用户和模型并发。
+- 请求先解析发布版本并预占最大额度，供应商终态 Usage 用于实际结算；拒绝类错误释放额度，未知结果
+  进入待对账并由恢复任务幂等重试。
+- 新供应商的 API Key 由 Model Catalog 使用 AES-256-GCM 加密保存，数据库和管理端只暴露掩码、指纹与
+  审计元数据；Model Gateway 通过内部接口按引用读取。旧 `credential_reference` 环境变量方式仅作为
+  已有 Provider 的兼容回退。
+
+模型目录是读多写少链路：普通请求读取 Redis 发布快照，MySQL 保存最终事实；管理端写入使用事务、
+模型行锁和 revision 乐观并发控制。数据库唯一约束保证每个模型最多一个草稿和一个已发布版本，
+发布事务提交后才递增缓存 generation 并删除旧快照，避免读取未提交或过期配置。
+
+## 数据库迁移约定
+
+每个拥有数据库的微服务负责维护自己的表结构，并使用以下 Flyway 目录：
+
+```text
+user-service/src/main/resources/db/migration/           # lumora_user
+billing-service/src/main/resources/db/migration/        # lumora_billing
+model-catalog-service/src/main/resources/db/migration/  # lumora_model_catalog
+```
+
+脚本采用 `V1__init_schema.sql`、`V2__add_xxx.sql` 等版本化命名。Gateway、
+`model-gateway-service` 和公共模块不拥有数据库，不得集中维护或直接修改其他服务的数据表。
+`deploy/mysql/init/` 只负责空数据目录第一次启动时创建数据库和授权，不用于后续表结构升级。
+
+Billing 的周额度周期从订阅生效时刻开始连续计算，每七天一个周期；最后一个周期在订阅结束时截断，
+不按自然周划分。额度金额统一使用 `DECIMAL(20,6)`，MySQL 是最终事实来源。
+
+购买订单使用 `(user_id, idempotency_key)` 唯一约束避免网络重试重复下单，并在下单时冻结套餐版本、
+名称、金额和币种。支付确认锁定订单行，在同一事务内记录支付尝试、创建一次 `PURCHASE` 订阅并把订单
+推进到 `FULFILLED`；同一用户并发续费由 Billing Account 行锁串行化，后续订阅从现有最晚结束时间开始。
+待支付订单默认 30 分钟过期。当前 `MOCK` 方式只供本地联调，真实渠道后续通过支付适配器与服务端回调
+复用同一确认状态机，不能由浏览器直接声明支付成功。
+
+管理端运营统计继续遵循数据所有权：User、Billing 与 Model Catalog 分别聚合自己的 MySQL 数据，前端
+并行读取并处理局部失败，不增加跨库查询。日/月统计边界统一采用 `Asia/Shanghai`；订单收入按币种
+分组，不能把 CNY、USD 等金额直接相加。面向全局时间范围的统计列具有独立索引，避免复用仅适合
+单用户历史查询的联合索引造成全表扫描。
+
+## 开发环境配置
+
+开发环境使用 `application-dev.yml`：Gateway 和各业务服务在本机启动，MySQL、Redis、Nacos、
+Sentinel 和 RabbitMQ 连接虚拟机 `192.168.100.132`。本地 YAML 只保留 Nacos 连接引导配置，公共参数
+和服务级参数从 Nacos Config 的 `LUMORA_CLOUD` Group 加载；需要发布的 Data ID 和完整内容位于
+[`deploy/nacos-config`](../deploy/nacos-config/README.md)。启动服务时设置 `SPRING_PROFILES_ACTIVE=dev`。
+
+`backend/.env.example` 是变量模板。各服务会可选读取当前工作目录的 `.env` 和上一级目录的 `.env`，
+因此本机从 `backend/` 或单个模块目录启动都可以使用 `backend/.env`；真实文件已被 Git 忽略，不能
+提交。Nacos 中的配置只引用这些变量，不保存真实密码。也可以在 IntelliJ IDEA Run Configuration
+中直接设置同名环境变量覆盖它。未来把 Java 服务
+部署到虚拟机时，再使用 `/etc/lumora-cloud/lumora-cloud.env`，由 systemd 的 `EnvironmentFile` 加载。
+
+`LUMORA_CREDENTIAL_MASTER_KEY` 是 Model Catalog 的平台级凭据主密钥，必须是随机 32 字节的 Base64，
+需要稳定保存并安全备份。它只用于加密供应商 API Key，不写入 Nacos；未经密钥迁移不能直接更换。
+
+## 认证边界
+
+- Web 和 Desktop 都调用 `/api/app/auth/**`，但各自创建独立设备会话。
+- Access Token 为短期 JWT；Web Refresh Token 只写入 HttpOnly Cookie，Desktop 接入时通过响应体交给
+  Electron Main 的系统安全存储。
+- Refresh Token 仅以 SHA-256 哈希入库，每次刷新都会轮换；重复使用旧 Token 会撤销整个设备会话。
+- Gateway 会删除客户端提供的 `X-Lumora-*` 身份头，验签后重新注入用户、会话、设备、角色和请求 ID。
+- OpenFeign 只透传 Access Token、请求 ID 和经过内部密钥确认的用户上下文，不透传 Cookie 或
+  Refresh Token。
+
+Compose 会在全新 MySQL 数据目录首次启动时创建以下数据库，并授权给专用的 `lumora` 应用账号：
+
+- `lumora_user`
+- `lumora_billing`
+- `lumora_model_catalog`
+
+RabbitMQ 使用专用 Virtual Host `/lumora`。Nacos 3 首次启动时由 Compose 初始化管理员 `nacos`，
+本地环境变量 `LUMORA_NACOS_PASSWORD` 应与部署端的 `NACOS_ADMIN_PASSWORD` 保持一致。完整启动方式见
+[`deploy/README.md`](../deploy/README.md)。

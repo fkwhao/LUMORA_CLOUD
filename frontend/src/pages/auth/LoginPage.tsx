@@ -1,43 +1,79 @@
-import { ArrowRight, KeyRound, ShieldCheck } from "lucide-react";
-import type { FormEvent } from "react";
+import { Button, Card, Chip, Input, Label, TextField } from "@heroui/react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
+import { useState, type FormEvent } from "react";
 
+import { ApiClientError, login, type UserProfile } from "../../api/auth";
 import { BrandMark } from "../../components/BrandMark";
 
-export function LoginPage() {
-  function submit(event: FormEvent<HTMLFormElement>) {
+interface LoginPageProps {
+  onAuthenticated: (user: UserProfile) => void;
+}
+
+export function LoginPage({ onAuthenticated }: LoginPageProps) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    window.location.assign("/console");
+    setPending(true);
+    setError(null);
+
+    const form = new FormData(event.currentTarget);
+    try {
+      const user = await login(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
+      onAuthenticated(user);
+    } catch (reason) {
+      setError(reason instanceof ApiClientError ? reason.message : "无法连接云端服务，请稍后重试");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
-    <main className="login-page">
-      <section className="login-story">
-        <a className="login-brand" href="/console"><BrandMark /> Lumora</a>
-        <div className="story-copy">
-          <span className="eyebrow">MODEL ACCESS, CLEARLY ACCOUNTED.</span>
-          <h1>把模型能力交给工作，<em>把边界留给自己。</em></h1>
-          <p>网页控制台使用独立会话。登录后管理套餐与账单，不会读取 Desktop 的登录凭据。</p>
-        </div>
-        <div className="trust-line"><ShieldCheck size={16} /> Desktop 与网页会话相互隔离</div>
-      </section>
+    <main className="flex min-h-screen flex-col bg-background px-4 py-6 text-foreground">
+      <a className="mx-auto flex w-full max-w-6xl items-center gap-3" href="/">
+        <BrandMark />
+        <span className="text-sm font-semibold">Lumora Cloud</span>
+      </a>
 
-      <section className="login-panel">
-        <form onSubmit={submit}>
-          <span className="login-icon"><KeyRound size={20} /></span>
-          <p className="eyebrow">WELCOME BACK</p>
-          <h2>登录 Lumora Cloud</h2>
-          <p className="form-intro">查看套餐、购买额度与管理云端模型使用。</p>
-          <label>
-            <span>邮箱</span>
-            <input type="email" defaultValue="demo@lumora.local" required />
-          </label>
-          <label>
-            <span>密码</span>
-            <input type="password" placeholder="请输入密码" required />
-          </label>
-          <button type="submit">进入控制台 <ArrowRight size={17} /></button>
-          <small>当前为界面骨架，提交后进入演示控制台。</small>
-        </form>
+      <section className="flex flex-1 items-center justify-center py-10">
+        <Card className="w-full max-w-md" variant="default">
+          <Card.Header className="gap-3 px-2 pt-2">
+            <Chip color="accent" size="sm" variant="soft">Cloud Console</Chip>
+            <div>
+              <Card.Title className="text-xl">登录 Lumora Cloud</Card.Title>
+              <Card.Description className="mt-1">
+                登录后查看套餐、用量并管理云端模型服务。
+              </Card.Description>
+            </div>
+          </Card.Header>
+
+          <Card.Content className="px-2 py-3">
+            <form className="space-y-4" onSubmit={submit}>
+              <TextField fullWidth isRequired name="email" type="email">
+                <Label>邮箱</Label>
+                <Input fullWidth autoComplete="email" placeholder="name@example.com" />
+              </TextField>
+              <TextField fullWidth isRequired name="password" type="password">
+                <Label>密码</Label>
+                <Input fullWidth autoComplete="current-password" placeholder="请输入密码" />
+              </TextField>
+              {error && (
+                <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
+                  {error}
+                </p>
+              )}
+              <Button fullWidth isDisabled={pending} type="submit" variant="primary">
+                {pending ? "正在登录…" : "进入控制台"} {!pending && <ArrowRight size={17} />}
+              </Button>
+            </form>
+          </Card.Content>
+
+          <Card.Footer className="flex-col items-start gap-2 px-2 pb-2 text-xs text-muted">
+            <span className="flex items-center gap-2"><ShieldCheck size={15} /> 网页与 Desktop 使用独立登录会话</span>
+            <span>访问令牌仅保存在当前页面内存中，刷新令牌由安全 Cookie 保存。</span>
+          </Card.Footer>
+        </Card>
       </section>
     </main>
   );

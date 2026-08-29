@@ -1,31 +1,178 @@
+name: lumora-cloud
+
 services:
   mysql:
-    image: mysql:8.4
+    image: ${MYSQL_IMAGE:-mysql:8.0}
+    pull_policy: never
+    container_name: lumora-cloud-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-lumora_cloud}
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in deploy/.env}"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lumora_user}
       MYSQL_USER: ${MYSQL_USER:-lumora}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in deploy/.env}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in deploy/.env}
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in deploy/.env}"
+      LUMORA_USER_DATABASE: ${LUMORA_USER_DATABASE:-lumora_user}
+      LUMORA_BILLING_DATABASE: ${LUMORA_BILLING_DATABASE:-lumora_billing}
+      LUMORA_MODEL_CATALOG_DATABASE: ${LUMORA_MODEL_CATALOG_DATABASE:-lumora_model_catalog}
     ports:
-      - "43306:3306"
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${MYSQL_HOST_PORT:-3307}:3306"
     volumes:
-      - lumora-mysql:/var/lib/mysql
+      - ./data/mysql:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - middleware
 
   redis:
-    image: redis:7.4-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    pull_policy: never
+    container_name: lumora-cloud-redis
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    environment:
+      TZ: Asia/Shanghai
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/.env}"
     ports:
-      - "46379:6379"
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
-      - lumora-redis:/data
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - middleware
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:3.8-management}
+    pull_policy: never
+    container_name: lumora-cloud-rabbitmq
+    hostname: lumora-rabbitmq
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-lumora}
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in deploy/.env}"
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/lumora}
+    ports:
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${RABBITMQ_AMQP_HOST_PORT:-5672}:5672"
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672"
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    networks:
+      - middleware
 
   nacos:
-    image: nacos/nacos-server:v3.0.3
+    image: ${NACOS_IMAGE:-nacos/nacos-server:v3.0.3}
+    pull_policy: never
+    container_name: lumora-cloud-nacos
+    restart: unless-stopped
     environment:
+      TZ: Asia/Shanghai
       MODE: standalone
+      PREFER_HOST_MODE: hostname
+      JVM_XMS: ${NACOS_JVM_XMS:-256m}
+      JVM_XMX: ${NACOS_JVM_XMX:-512m}
+      JVM_XMN: ${NACOS_JVM_XMN:-128m}
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_ADMIN_ENABLE: "true"
+      NACOS_AUTH_CONSOLE_ENABLE: "true"
+      NACOS_AUTH_SYSTEM_TYPE: nacos
+      NACOS_AUTH_TOKEN: "${NACOS_AUTH_TOKEN:?Set NACOS_AUTH_TOKEN in deploy/.env}"
+      NACOS_AUTH_IDENTITY_KEY: "${NACOS_AUTH_IDENTITY_KEY:?Set NACOS_AUTH_IDENTITY_KEY in deploy/.env}"
+      NACOS_AUTH_IDENTITY_VALUE: "${NACOS_AUTH_IDENTITY_VALUE:?Set NACOS_AUTH_IDENTITY_VALUE in deploy/.env}"
     ports:
-      - "48848:8848"
-      - "49848:9848"
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${NACOS_CONSOLE_HOST_PORT:-8080}:8080"
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${NACOS_SERVER_HOST_PORT:-8848}:8848"
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${NACOS_GRPC_HOST_PORT:-9848}:9848"
+    volumes:
+      - ./data/nacos/data:/home/nacos/data
+      - ./data/nacos/logs:/home/nacos/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/v3/console/server/state >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    networks:
+      - middleware
 
-volumes:
-  lumora-mysql:
-  lumora-redis:
+  nacos-init:
+    image: ${NACOS_IMAGE:-nacos/nacos-server:v3.0.3}
+    pull_policy: never
+    container_name: lumora-cloud-nacos-init
+    restart: "no"
+    depends_on:
+      nacos:
+        condition: service_healthy
+    environment:
+      NACOS_ADMIN_PASSWORD: "${NACOS_ADMIN_PASSWORD:?Set NACOS_ADMIN_PASSWORD in deploy/.env}"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if curl -fsS --retry 10 --retry-all-errors --retry-delay 2 \
+          -X POST http://nacos:8848/nacos/v3/auth/user/admin \
+          --data-urlencode "password=$$NACOS_ADMIN_PASSWORD"; then
+          echo
+          echo "Nacos administrator initialized."
+        elif curl -fsS -X POST http://nacos:8848/nacos/v3/auth/user/login \
+          --data-urlencode "username=nacos" \
+          --data-urlencode "password=$$NACOS_ADMIN_PASSWORD" >/dev/null; then
+          echo "Nacos administrator already exists and the configured password is valid."
+        else
+          echo "Nacos administrator initialization failed or the existing password differs from .env." >&2
+          exit 1
+        fi
+    networks:
+      - middleware
+
+  sentinel:
+    image: lumora/sentinel-dashboard:${SENTINEL_VERSION:-1.8.9}
+    pull_policy: build
+    container_name: lumora-cloud-sentinel
+    restart: unless-stopped
+    build:
+      context: ./sentinel
+      dockerfile: Dockerfile
+      pull: false
+      args:
+        JAVA_BASE_IMAGE: ${NACOS_IMAGE:-nacos/nacos-server:v3.0.3}
+        SENTINEL_VERSION: ${SENTINEL_VERSION:-1.8.9}
+    environment:
+      TZ: Asia/Shanghai
+      sentinel_dashboard_auth_username: ${SENTINEL_USERNAME:-sentinel}
+      sentinel_dashboard_auth_password: "${SENTINEL_PASSWORD:?Set SENTINEL_PASSWORD in deploy/.env}"
+    ports:
+      - "${LUMORA_BIND_HOST:-0.0.0.0}:${SENTINEL_HOST_PORT:-8858}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - middleware
+
+networks:
+  middleware:
+    name: lumora-cloud-middleware
+    driver: bridge

@@ -4,8 +4,11 @@ import java.util.Set;
 
 public record UserContext(
         String userId,
+        String sessionId,
         String deviceId,
-        Set<String> roles
+        Set<String> roles,
+        String clientType,
+        String requestId
 ) {
     public UserContext {
         roles = Set.copyOf(roles);

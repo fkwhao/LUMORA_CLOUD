@@ -1,0 +1,40 @@
+# Group: LUMORA_CLOUD
+spring:
+  codec:
+    max-in-memory-size: 8MB
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 8000
+
+lumora:
+  model-gateway:
+    catalog:
+      local-cache-ttl: PT30S
+      maximum-size: 1000
+    concurrency:
+      per-user: 3
+      per-model: 100
+      lease-ttl: PT5M
+      request-lease-ttl: PT10M
+    provider:
+      connect-timeout: PT5S
+      response-timeout: PT2M
+      max-call-duration: PT3M
+      max-connections: 200
+      pending-acquire-max-count: 1000
+      pending-acquire-timeout: PT3S
+      max-idle-time: PT2M
+      max-error-body-bytes: 1048576
+      max-buffered-response-bytes: 16777216
+    recovery:
+      retention: P7D
+      scan-interval: PT10S
+      batch-size: 100
+
+logging:
+  level:
+    com.lumora.cloud.modelgateway: info

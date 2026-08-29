@@ -1,17 +1,14 @@
 spring:
+  config:
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
+  profiles:
+    default: dev
   application:
     name: lumora-cloud-gateway
   cloud:
     nacos:
       discovery:
         server-addr: ${LUMORA_NACOS_ADDR:127.0.0.1:8848}
-    gateway:
-      server:
-        webflux:
-          discovery:
-            locator:
-              enabled: true
-              lower-case-service-id: true
 
 server:
   port: ${LUMORA_GATEWAY_PORT:46100}
@@ -21,3 +18,10 @@ management:
     web:
       exposure:
         include: health,info,gateway
+
+lumora:
+  security:
+    internal-token: ${LUMORA_INTERNAL_TOKEN}
+  auth:
+    jwt:
+      secret: ${LUMORA_JWT_SECRET}
