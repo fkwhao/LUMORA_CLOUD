@@ -1,6 +1,8 @@
 package com.lumora.cloud.catalog.domain;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
+import java.util.List;
 
 public record ModelVersionValues(
         String displayName,
@@ -15,14 +17,59 @@ public record ModelVersionValues(
         String costCurrency,
         BigDecimal inputCostPerMillion,
         BigDecimal outputCostPerMillion,
-        BigDecimal reasoningCostPerMillion,
         BigDecimal cacheReadCostPerMillion,
         BigDecimal cacheWriteCostPerMillion,
+        CostTimePricingPolicyValues costTimePricingPolicy,
         BigDecimal inputQuotaPerMillion,
         BigDecimal outputQuotaPerMillion,
-        BigDecimal reasoningQuotaPerMillion,
         BigDecimal cacheReadQuotaPerMillion,
         BigDecimal cacheWriteQuotaPerMillion,
-        BigDecimal minimumRequestQuota
+        BigDecimal minimumRequestQuota,
+        QuotaTimePricingPolicyValues quotaTimePricingPolicy
 ) {
+
+    public record CostRatesValues(
+            BigDecimal inputPerMillion,
+            BigDecimal outputPerMillion,
+            BigDecimal cacheReadPerMillion,
+            BigDecimal cacheWritePerMillion
+    ) {
+    }
+
+    public record CostTimePricingPolicyValues(
+            String zoneId,
+            List<CostTimePricingRuleValues> rules
+    ) {
+        public CostTimePricingPolicyValues {
+            rules = List.copyOf(rules);
+        }
+    }
+
+    public record CostTimePricingRuleValues(
+            String name,
+            int daysMask,
+            LocalTime startTime,
+            LocalTime endTime,
+            CostRatesValues costRates
+    ) {
+    }
+
+    public record QuotaTimePricingPolicyValues(
+            String zoneId,
+            BigDecimal defaultQuotaMultiplier,
+            List<QuotaTimePricingRuleValues> rules
+    ) {
+        public QuotaTimePricingPolicyValues {
+            rules = List.copyOf(rules);
+        }
+    }
+
+    public record QuotaTimePricingRuleValues(
+            String name,
+            int daysMask,
+            LocalTime startTime,
+            LocalTime endTime,
+            BigDecimal quotaMultiplier
+    ) {
+    }
 }

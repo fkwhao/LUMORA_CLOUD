@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumora.cloud.api.billing.BillingContracts.ReservationResponse;
 import com.lumora.cloud.api.billing.BillingContracts.ReservationStatus;
 import com.lumora.cloud.api.billing.BillingContracts.SettleRequest;
+import com.lumora.cloud.api.catalog.CatalogContracts.CostRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
@@ -86,7 +87,8 @@ class ModelGatewayOrchestratorTest {
         when(concurrencyLimiter.release(any())).thenReturn(Mono.empty());
         when(billing.reserve(any())).thenReturn(Mono.just(new ReservationResponse(
                 "reservation", "mgw-request", 42L, "test-model", "pricing-v1",
-                ReservationStatus.ACTIVE, amount("1"), null, amount("9"), Instant.now().plusSeconds(60), false
+                ReservationStatus.ACTIVE, amount("1"), null, amount("9"), Instant.now(), amount("1"), null,
+                Instant.now().plusSeconds(60), false
         )));
     }
 
@@ -189,7 +191,8 @@ class ModelGatewayOrchestratorTest {
     void neverCallsProviderForIdempotentReservationReplay() throws Exception {
         when(billing.reserve(any())).thenReturn(Mono.just(new ReservationResponse(
                 "reservation", "mgw-request", 42L, "test-model", "pricing-v1",
-                ReservationStatus.ACTIVE, amount("1"), null, amount("9"), Instant.now().plusSeconds(60), true
+                ReservationStatus.ACTIVE, amount("1"), null, amount("9"), Instant.now(), amount("1"), null,
+                Instant.now().plusSeconds(60), true
         )));
 
         StepVerifier.create(orchestrator.invoke(context, objectMapper.readTree("""
@@ -210,7 +213,8 @@ class ModelGatewayOrchestratorTest {
         ResolvedModelConfig managedModel = new ResolvedModelConfig(
                 model.modelCode(), model.displayName(), model.description(), model.pricingVersion(),
                 model.providerCode(), model.protocolType(), model.baseUrl(), "cred_test", model.upstreamModel(),
-                model.capabilities(), model.quotaRates(), model.publishedAt()
+                model.capabilities(), model.costCurrency(), model.costRates(), model.costTimePricingPolicy(),
+                model.quotaRates(), model.quotaTimePricingPolicy(), model.publishedAt()
         );
         when(modelCache.resolve("test-model")).thenReturn(Mono.just(managedModel));
         when(credentials.resolve("cred_test")).thenReturn("old-secret", "new-secret");
@@ -241,8 +245,9 @@ class ModelGatewayOrchestratorTest {
                 "test-model", "Test", null, "pricing-v1", "provider", "OPENAI_COMPATIBLE",
                 "https://api.example.com/v1", "TEST_KEY", "upstream-model",
                 new ModelCapabilities(1_000, 100, true, true, true, true),
-                new QuotaRates(amount("10"), amount("20"), amount("20"), amount("10"), amount("10"), amount("0.000001")),
-                Instant.now()
+                "USD", new CostRates(amount("1"), amount("1"), amount("1"), amount("2")), null,
+                new QuotaRates(amount("10"), amount("10"), amount("10"), amount("20"), amount("0.000001")),
+                null, Instant.now()
         );
     }
 

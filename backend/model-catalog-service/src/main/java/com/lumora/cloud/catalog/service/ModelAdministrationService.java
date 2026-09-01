@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.catalog.domain.CatalogTypes.ModelStatus;
-import com.lumora.cloud.catalog.domain.CatalogTypes.VersionStatus;
 import com.lumora.cloud.catalog.domain.ModelVersionValues;
 import com.lumora.cloud.catalog.error.ApiException;
 import com.lumora.cloud.catalog.persistence.entity.ModelDefinitionEntity;
@@ -38,6 +37,7 @@ public class ModelAdministrationService {
     private final ProviderMapper providerMapper;
     private final ProviderService providerService;
     private final CatalogInputMapper inputMapper;
+    private final TimePricingPolicyService timePricingPolicyService;
     private final PublishedCatalogCache cache;
 
     public ModelAdministrationService(
@@ -46,6 +46,7 @@ public class ModelAdministrationService {
             ProviderMapper providerMapper,
             ProviderService providerService,
             CatalogInputMapper inputMapper,
+            TimePricingPolicyService timePricingPolicyService,
             PublishedCatalogCache cache
     ) {
         this.modelMapper = modelMapper;
@@ -53,6 +54,7 @@ public class ModelAdministrationService {
         this.providerMapper = providerMapper;
         this.providerService = providerService;
         this.inputMapper = inputMapper;
+        this.timePricingPolicyService = timePricingPolicyService;
         this.cache = cache;
     }
 
@@ -74,6 +76,9 @@ public class ModelAdministrationService {
                 UUID.randomUUID().toString(), UUID.randomUUID().toString(), model.getId(), 1, provider, values
         );
         versionMapper.insert(draft);
+        timePricingPolicyService.replace(
+                draft.getId(), values.costTimePricingPolicy(), values.quotaTimePricingPolicy()
+        );
         return response(modelMapper.selectById(model.getId()), draft, null);
     }
 
@@ -96,6 +101,7 @@ public class ModelAdministrationService {
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "MODEL_DRAFT_CONFLICT", "草稿已被其他操作创建");
         }
+        timePricingPolicyService.copy(published.getId(), draft.getId());
         modelMapper.touch(modelId);
         return response(modelMapper.selectById(modelId), draft, published);
     }
@@ -108,16 +114,38 @@ public class ModelAdministrationService {
             throw draftConflict();
         }
         ProviderEntity provider = providerService.requireActiveForUpdate(request.providerId());
-        ModelVersionEntity update = ModelVersionEntity.draftUpdate(
-                draft, provider, inputMapper.values(request.version())
-        );
+        ModelVersionValues values = inputMapper.values(request.version());
+        ModelVersionEntity update = ModelVersionEntity.draftUpdate(draft, provider, values);
         if (versionMapper.updateDraftOptimistic(update, request.expectedRevision()) != 1) {
             throw draftConflict();
         }
+        timePricingPolicyService.replace(
+                draft.getId(), values.costTimePricingPolicy(), values.quotaTimePricingPolicy()
+        );
         modelMapper.touch(modelId);
         return response(
                 modelMapper.selectById(modelId), versionMapper.findDraft(modelId), versionMapper.findPublished(modelId)
         );
+    }
+
+    @Transactional
+    public void discardDraft(Long modelId, long expectedRevision) {
+        requireModelForUpdate(modelId);
+        ModelVersionEntity draft = requireDraftForUpdate(modelId);
+        if (draft.getRevision() != expectedRevision) {
+            throw draftConflict();
+        }
+        ModelVersionEntity published = versionMapper.findPublishedForUpdate(modelId);
+        if (versionMapper.deleteDraftOptimistic(draft.getId(), modelId, expectedRevision) != 1) {
+            throw draftConflict();
+        }
+        if (published == null) {
+            if (modelMapper.deleteById(modelId) != 1) {
+                throw modelConflict();
+            }
+            return;
+        }
+        modelMapper.touch(modelId);
     }
 
     @Transactional
@@ -218,16 +246,25 @@ public class ModelAdministrationService {
                 entity.getCredentialReference(), new ModelCapabilities(
                         entity.getContextWindow(), entity.getMaxOutputTokens(), entity.getSupportsReasoning(),
                         entity.getSupportsTools(), entity.getSupportsVision(), entity.getSupportsJson()
-                ), entity.getCostCurrency(), new CostRates(
-                        entity.getInputCostPerMillion(), entity.getOutputCostPerMillion(),
-                        entity.getReasoningCostPerMillion(), entity.getCacheReadCostPerMillion(),
-                        entity.getCacheWriteCostPerMillion()
-                ), new QuotaRates(
-                        entity.getInputQuotaPerMillion(), entity.getOutputQuotaPerMillion(),
-                        entity.getReasoningQuotaPerMillion(), entity.getCacheReadQuotaPerMillion(),
-                        entity.getCacheWriteQuotaPerMillion(), entity.getMinimumRequestQuota()
-                ), entity.getPublishedAt(), entity.getCreatedAt(), entity.getUpdatedAt()
+                ), entity.getCostCurrency(), costRates(
+                        entity.getInputCostPerMillion(), entity.getCacheReadCostPerMillion(),
+                        entity.getCacheWriteCostPerMillion(), entity.getOutputCostPerMillion()
+                ), timePricingPolicyService.adminCostPolicy(entity), new QuotaRates(
+                        entity.getInputQuotaPerMillion(), entity.getCacheReadQuotaPerMillion(),
+                        entity.getCacheWriteQuotaPerMillion(), entity.getOutputQuotaPerMillion(),
+                        entity.getMinimumRequestQuota()
+                ), timePricingPolicyService.adminQuotaPolicy(entity), entity.getPublishedAt(),
+                entity.getCreatedAt(), entity.getUpdatedAt()
         );
+    }
+
+    private CostRates costRates(
+            java.math.BigDecimal input,
+            java.math.BigDecimal cachedInput,
+            java.math.BigDecimal cacheCreationInput,
+            java.math.BigDecimal output
+    ) {
+        return new CostRates(input, cachedInput, cacheCreationInput, output);
     }
 
     private ApiException duplicateCode() {

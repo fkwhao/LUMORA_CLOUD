@@ -18,6 +18,9 @@ public class ReservationEntity {
     private Long userId;
     private String modelCode;
     private String pricingVersion;
+    private Instant pricingAt;
+    private BigDecimal quotaMultiplier;
+    private String pricingRuleName;
     private String quotaBucketId;
     private BigDecimal requestedQuota;
     private BigDecimal settledQuota;
@@ -40,6 +43,9 @@ public class ReservationEntity {
             String modelCode,
             String pricingVersion,
             BigDecimal requestedQuota,
+            Instant pricingAt,
+            BigDecimal quotaMultiplier,
+            String pricingRuleName,
             Instant expiresAt
     ) {
         ReservationEntity entity = new ReservationEntity();
@@ -50,6 +56,9 @@ public class ReservationEntity {
         entity.modelCode = modelCode;
         entity.pricingVersion = pricingVersion;
         entity.requestedQuota = requestedQuota;
+        entity.pricingAt = pricingAt;
+        entity.quotaMultiplier = quotaMultiplier;
+        entity.pricingRuleName = pricingRuleName;
         entity.status = ReservationStatus.PROCESSING.name();
         entity.expiresAt = expiresAt;
         return entity;
@@ -61,6 +70,9 @@ public class ReservationEntity {
     public Long getUserId() { return userId; }
     public String getModelCode() { return modelCode; }
     public String getPricingVersion() { return pricingVersion; }
+    public Instant getPricingAt() { return pricingAt; }
+    public BigDecimal getQuotaMultiplier() { return quotaMultiplier; }
+    public String getPricingRuleName() { return pricingRuleName; }
     public String getQuotaBucketId() { return quotaBucketId; }
     public BigDecimal getRequestedQuota() { return requestedQuota; }
     public BigDecimal getSettledQuota() { return settledQuota; }

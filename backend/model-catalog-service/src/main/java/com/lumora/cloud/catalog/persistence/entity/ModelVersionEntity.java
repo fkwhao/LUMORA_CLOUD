@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.lumora.cloud.catalog.domain.CatalogTypes.VersionStatus;
 import com.lumora.cloud.catalog.domain.ModelVersionValues;
+import com.lumora.cloud.catalog.domain.ModelVersionValues.CostTimePricingPolicyValues;
+import com.lumora.cloud.catalog.domain.ModelVersionValues.QuotaTimePricingPolicyValues;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -36,15 +38,18 @@ public class ModelVersionEntity {
     private String costCurrency;
     private BigDecimal inputCostPerMillion;
     private BigDecimal outputCostPerMillion;
-    private BigDecimal reasoningCostPerMillion;
     private BigDecimal cacheReadCostPerMillion;
     private BigDecimal cacheWriteCostPerMillion;
+    private Boolean costTimePricingEnabled;
+    private String costTimePricingZone;
+    private Boolean quotaTimePricingEnabled;
+    private String quotaTimePricingZone;
     private BigDecimal inputQuotaPerMillion;
     private BigDecimal outputQuotaPerMillion;
-    private BigDecimal reasoningQuotaPerMillion;
     private BigDecimal cacheReadQuotaPerMillion;
     private BigDecimal cacheWriteQuotaPerMillion;
     private BigDecimal minimumRequestQuota;
+    private BigDecimal defaultQuotaMultiplier;
     private Instant publishedAt;
     private Instant createdAt;
     private Instant updatedAt;
@@ -126,15 +131,18 @@ public class ModelVersionEntity {
         entity.costCurrency = published.costCurrency;
         entity.inputCostPerMillion = published.inputCostPerMillion;
         entity.outputCostPerMillion = published.outputCostPerMillion;
-        entity.reasoningCostPerMillion = published.reasoningCostPerMillion;
         entity.cacheReadCostPerMillion = published.cacheReadCostPerMillion;
         entity.cacheWriteCostPerMillion = published.cacheWriteCostPerMillion;
+        entity.costTimePricingEnabled = published.costTimePricingEnabled;
+        entity.costTimePricingZone = published.costTimePricingZone;
+        entity.quotaTimePricingEnabled = published.quotaTimePricingEnabled;
+        entity.quotaTimePricingZone = published.quotaTimePricingZone;
         entity.inputQuotaPerMillion = published.inputQuotaPerMillion;
         entity.outputQuotaPerMillion = published.outputQuotaPerMillion;
-        entity.reasoningQuotaPerMillion = published.reasoningQuotaPerMillion;
         entity.cacheReadQuotaPerMillion = published.cacheReadQuotaPerMillion;
         entity.cacheWriteQuotaPerMillion = published.cacheWriteQuotaPerMillion;
         entity.minimumRequestQuota = published.minimumRequestQuota;
+        entity.defaultQuotaMultiplier = published.defaultQuotaMultiplier;
         return entity;
     }
 
@@ -155,15 +163,26 @@ public class ModelVersionEntity {
         costCurrency = values.costCurrency();
         inputCostPerMillion = values.inputCostPerMillion();
         outputCostPerMillion = values.outputCostPerMillion();
-        reasoningCostPerMillion = values.reasoningCostPerMillion();
         cacheReadCostPerMillion = values.cacheReadCostPerMillion();
         cacheWriteCostPerMillion = values.cacheWriteCostPerMillion();
+        applyCostTimePricingPolicy(values.costTimePricingPolicy());
         inputQuotaPerMillion = values.inputQuotaPerMillion();
         outputQuotaPerMillion = values.outputQuotaPerMillion();
-        reasoningQuotaPerMillion = values.reasoningQuotaPerMillion();
         cacheReadQuotaPerMillion = values.cacheReadQuotaPerMillion();
         cacheWriteQuotaPerMillion = values.cacheWriteQuotaPerMillion();
         minimumRequestQuota = values.minimumRequestQuota();
+        applyQuotaTimePricingPolicy(values.quotaTimePricingPolicy());
+    }
+
+    private void applyCostTimePricingPolicy(CostTimePricingPolicyValues policy) {
+        costTimePricingEnabled = policy != null;
+        costTimePricingZone = policy == null ? null : policy.zoneId();
+    }
+
+    private void applyQuotaTimePricingPolicy(QuotaTimePricingPolicyValues policy) {
+        quotaTimePricingEnabled = policy != null;
+        quotaTimePricingZone = policy == null ? null : policy.zoneId();
+        defaultQuotaMultiplier = policy == null ? BigDecimal.ONE : policy.defaultQuotaMultiplier();
     }
 
     public String getId() { return id; }
@@ -188,15 +207,18 @@ public class ModelVersionEntity {
     public String getCostCurrency() { return costCurrency; }
     public BigDecimal getInputCostPerMillion() { return inputCostPerMillion; }
     public BigDecimal getOutputCostPerMillion() { return outputCostPerMillion; }
-    public BigDecimal getReasoningCostPerMillion() { return reasoningCostPerMillion; }
     public BigDecimal getCacheReadCostPerMillion() { return cacheReadCostPerMillion; }
     public BigDecimal getCacheWriteCostPerMillion() { return cacheWriteCostPerMillion; }
+    public Boolean getCostTimePricingEnabled() { return costTimePricingEnabled; }
+    public String getCostTimePricingZone() { return costTimePricingZone; }
+    public Boolean getQuotaTimePricingEnabled() { return quotaTimePricingEnabled; }
+    public String getQuotaTimePricingZone() { return quotaTimePricingZone; }
     public BigDecimal getInputQuotaPerMillion() { return inputQuotaPerMillion; }
     public BigDecimal getOutputQuotaPerMillion() { return outputQuotaPerMillion; }
-    public BigDecimal getReasoningQuotaPerMillion() { return reasoningQuotaPerMillion; }
     public BigDecimal getCacheReadQuotaPerMillion() { return cacheReadQuotaPerMillion; }
     public BigDecimal getCacheWriteQuotaPerMillion() { return cacheWriteQuotaPerMillion; }
     public BigDecimal getMinimumRequestQuota() { return minimumRequestQuota; }
+    public BigDecimal getDefaultQuotaMultiplier() { return defaultQuotaMultiplier; }
     public Instant getPublishedAt() { return publishedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

@@ -11,8 +11,13 @@ import com.lumora.cloud.catalog.persistence.mapper.ProviderMapper;
 import com.lumora.cloud.catalog.persistence.mapper.ProviderCredentialMapper;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CreateModelRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CreateProviderRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.CostRateInput;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.CostTimePricingPolicyInput;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.CostTimePricingRuleInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.ModelVersionInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.PublishDraftRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.QuotaTimePricingPolicyInput;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.QuotaTimePricingRuleInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.RotateProviderCredentialRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateDraftRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelStatusRequest;
@@ -27,6 +32,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
+import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,7 +53,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @EnabledIfEnvironmentVariable(named = "LUMORA_RUN_CATALOG_TESTS", matches = "true")
 class ModelCatalogMySqlRedisIntegrationTest {
 
-    private static final String CACHE_KEY = "lumora:catalog:published:v1";
+    private static final String CACHE_KEY = "lumora:catalog:published:v3";
     private static final String GENERATION_KEY = "lumora:catalog:generation";
 
     @Autowired
@@ -99,6 +107,15 @@ class ModelCatalogMySqlRedisIntegrationTest {
         var created = modelService.create(new CreateModelRequest(
                 "it-model-" + suffix, provider.id(), version("First", "1.000000")
         ));
+        assertThat(created.draft().costTimePricingPolicy().zoneId()).isEqualTo("Asia/Shanghai");
+        assertThat(created.draft().costTimePricingPolicy().rules()).hasSize(1);
+        assertThat(created.draft().costTimePricingPolicy().rules().getFirst().startTime())
+                .isEqualTo(LocalTime.of(9, 30));
+        assertThat(created.draft().costTimePricingPolicy().rules().getFirst()
+                .costRates().cacheCreationInputPerMillion())
+                .isEqualByComparingTo("0.000000");
+        assertThat(created.draft().quotaTimePricingPolicy().zoneId()).isEqualTo("Asia/Shanghai");
+        assertThat(created.draft().quotaTimePricingPolicy().rules()).hasSize(2);
 
         var firstPublished = modelService.publishDraft(
                 created.modelId(), new PublishDraftRequest(created.draft().revision())
@@ -106,6 +123,22 @@ class ModelCatalogMySqlRedisIntegrationTest {
         String firstPricingVersion = firstPublished.published().pricingVersion();
 
         var secondDraft = modelService.createDraft(created.modelId());
+        assertThat(secondDraft.draft())
+                .usingRecursiveComparison()
+                .ignoringFields(
+                        "id", "pricingVersion", "versionNo", "status", "revision",
+                        "publishedAt", "createdAt", "updatedAt"
+                )
+                .isEqualTo(firstPublished.published());
+        String discardedDraftId = secondDraft.draft().id();
+        modelService.discardDraft(created.modelId(), secondDraft.draft().revision());
+        assertThat(versionMapper.selectById(discardedDraftId)).isNull();
+        assertThat(modelService.history(created.modelId()))
+                .extracting(version -> version.versionNo() + ":" + version.status())
+                .containsExactly("1:PUBLISHED");
+
+        secondDraft = modelService.createDraft(created.modelId());
+        assertThat(secondDraft.draft().versionNo()).isEqualTo(2);
         var updatedDraft = modelService.updateDraft(created.modelId(), new UpdateDraftRequest(
                 secondDraft.draft().revision(), provider.id(), version("Second", "2.500000")
         ));
@@ -133,6 +166,12 @@ class ModelCatalogMySqlRedisIntegrationTest {
         var internalModel = publishedCatalogService.resolve("IT-MODEL-" + suffix);
         assertThat(internalModel.baseUrl()).isEqualTo("https://api.example.com/v1");
         assertThat(internalModel.credentialReference()).startsWith("cred_");
+        assertThat(internalModel.costTimePricingPolicy().rules()).hasSize(1);
+        assertThat(internalModel.costTimePricingPolicy().rules().getFirst().costRates().outputPerMillion())
+                .isEqualByComparingTo("0.300000");
+        assertThat(internalModel.quotaTimePricingPolicy().rules()).hasSize(2);
+        assertThat(internalModel.quotaTimePricingPolicy().rules().get(1).quotaMultiplier())
+                .isEqualByComparingTo("1.200000");
         assertThat(credentialService.resolve(internalModel.credentialReference()).secret())
                 .isEqualTo(firstApiKey);
         var encrypted = credentialMapper.findByReference(internalModel.credentialReference());
@@ -142,8 +181,12 @@ class ModelCatalogMySqlRedisIntegrationTest {
         assertThat(publishedCatalogService.publicModels())
                 .filteredOn(model -> model.code().equals("it-model-" + suffix))
                 .singleElement()
-                .satisfies(model -> assertThat(model.pricingVersion())
-                        .isEqualTo(secondPublished.published().pricingVersion()));
+                .satisfies(model -> {
+                    assertThat(model.pricingVersion()).isEqualTo(secondPublished.published().pricingVersion());
+                    assertThat(model.quotaTimePricingPolicy().rules()).hasSize(2);
+                    assertThat(model.quotaTimePricingPolicy().rules().getFirst().quotaMultiplier())
+                            .isEqualByComparingTo("1.200000");
+                });
 
         var publishedStatistics = statisticsService.statistics();
         assertThat(publishedStatistics.totalProviders() - statisticsBefore.totalProviders()).isEqualTo(1);
@@ -178,6 +221,22 @@ class ModelCatalogMySqlRedisIntegrationTest {
     }
 
     @Test
+    void discardingTheOnlyDraftRemovesTheUnpublishedModel() {
+        String suffix = suffix();
+        var provider = providerService.create(providerRequest(suffix));
+        var created = modelService.create(new CreateModelRequest(
+                "it-discard-" + suffix, provider.id(), version("Discard", "1")
+        ));
+        String draftId = created.draft().id();
+
+        modelService.discardDraft(created.modelId(), created.draft().revision());
+
+        assertThat(versionMapper.selectById(draftId)).isNull();
+        assertThat(modelService.list())
+                .noneMatch(model -> model.modelId().equals(created.modelId()));
+    }
+
+    @Test
     void databaseConstraintPreventsTwoDraftsForOneModel() {
         String suffix = suffix();
         var providerResponse = providerService.create(providerRequest(suffix));
@@ -207,11 +266,41 @@ class ModelCatalogMySqlRedisIntegrationTest {
     private ModelVersionInput version(String displayName, String quota) {
         BigDecimal zero = BigDecimal.ZERO;
         BigDecimal quotaRate = new BigDecimal(quota);
+        var costSchedule = new CostTimePricingPolicyInput(
+                "Asia/Shanghai", List.of(
+                        new CostTimePricingRuleInput(
+                                "上午峰时", List.of(
+                                        DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+                                        DayOfWeek.THURSDAY, DayOfWeek.FRIDAY
+                                ), LocalTime.of(9, 30), LocalTime.of(12, 0),
+                                new CostRateInput(new BigDecimal("0.10"), new BigDecimal("0.02"), null,
+                                        new BigDecimal("0.30"))
+                        )
+                )
+        );
+        var quotaSchedule = new QuotaTimePricingPolicyInput(
+                "Asia/Shanghai", BigDecimal.ONE, List.of(
+                        new QuotaTimePricingRuleInput(
+                                "上午额度峰时", List.of(
+                                        DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+                                        DayOfWeek.THURSDAY, DayOfWeek.FRIDAY
+                                ), LocalTime.of(8, 0), LocalTime.of(11, 30),
+                                new BigDecimal("1.200000")
+                        ),
+                        new QuotaTimePricingRuleInput(
+                                "下午峰时", List.of(
+                                        DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+                                        DayOfWeek.THURSDAY, DayOfWeek.FRIDAY
+                                ), LocalTime.of(14, 0), LocalTime.of(22, 0),
+                                new BigDecimal("1.200000")
+                        )
+                )
+        );
         return new ModelVersionInput(
                 displayName, "integration test", "upstream-test", 128_000, 8_192,
                 true, true, true, true, "CNY",
-                zero, zero, zero, zero, zero,
-                quotaRate, quotaRate, quotaRate, quotaRate, quotaRate, new BigDecimal("0.100000")
+                zero, zero, null, zero, costSchedule,
+                quotaRate, quotaRate, null, quotaRate, new BigDecimal("0.100000"), quotaSchedule
         );
     }
 

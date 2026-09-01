@@ -17,12 +17,14 @@ import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelStatusRequest
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateProviderRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -119,6 +121,16 @@ public class CatalogAdminController {
     ) {
         access.requireAdmin();
         return modelService.updateDraft(modelId, request);
+    }
+
+    @DeleteMapping("/models/{modelId}/draft")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void discardDraft(
+            @PathVariable Long modelId,
+            @RequestParam long expectedRevision
+    ) {
+        access.requireAdmin();
+        modelService.discardDraft(modelId, expectedRevision);
     }
 
     @PostMapping("/models/{modelId}/draft/publish")

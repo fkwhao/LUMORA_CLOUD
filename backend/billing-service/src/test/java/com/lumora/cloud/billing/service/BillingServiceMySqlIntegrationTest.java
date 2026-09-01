@@ -118,6 +118,9 @@ class BillingServiceMySqlIntegrationTest {
         assertThat(reservedAgain.reservationId()).isEqualTo(reserved.reservationId());
         assertThat(reserved.remainingQuota()).isEqualByComparingTo("80");
         assertThat(reserved.pricingVersion()).isEqualTo("catalog-v1");
+        assertThat(reserved.pricingAt()).isEqualTo(now);
+        assertThat(reserved.quotaMultiplier()).isEqualByComparingTo("1.200000");
+        assertThat(reserved.pricingRuleName()).isEqualTo("工作日峰时");
 
         assertThatThrownBy(() -> settlementService.settle(
                 firstReserve.requestId(), settleRequest(suffix + "-wrong-price", "catalog-v2", amount("12"), now)
@@ -179,7 +182,7 @@ class BillingServiceMySqlIntegrationTest {
     private ReserveRequest reserveRequest(String id, long userId, BigDecimal maximumQuota, Instant now) {
         return new ReserveRequest(
                 "request-" + id, "client-" + id, userId, "openai-gpt-test", "catalog-v1",
-                maximumQuota, now.plus(10, ChronoUnit.MINUTES)
+                maximumQuota, now, amount("1.200000"), "工作日峰时", now.plus(10, ChronoUnit.MINUTES)
         );
     }
 

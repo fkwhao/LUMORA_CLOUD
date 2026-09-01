@@ -14,7 +14,9 @@ import {
   Archive,
   Boxes,
   CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
+  Clock3,
   CloudUpload,
   CopyPlus,
   History,
@@ -24,6 +26,7 @@ import {
   RefreshCw,
   Server,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -31,6 +34,7 @@ import { ApiClientError } from "../../api/auth";
 import {
   createModel,
   createModelDraft,
+  discardModelDraft,
   listModels,
   listModelVersions,
   listProviders,
@@ -38,40 +42,63 @@ import {
   updateModelDraft,
   updateModelStatus,
   type AdminModel,
+  type CostTimePricingPolicy,
+  type CostTimePricingRule,
   type ModelProvider,
+  type ModelRates,
   type ModelVersion,
   type ModelVersionInput,
+  type PricingDay,
+  type QuotaTimePricingPolicy,
+  type QuotaTimePricingRule,
 } from "../../api/catalog";
+
+interface EditableCostTimePricingRule extends CostTimePricingRule {
+  id: string;
+  cacheCreationEnabled: boolean;
+}
+
+interface EditableQuotaTimePricingRule extends QuotaTimePricingRule {
+  id: string;
+}
+
+interface ModelEditorSubmission {
+  code: string;
+  providerId: number;
+  version: ModelVersionInput;
+}
+
+const pricingDays: Array<{ key: PricingDay; label: string }> = [
+  { key: "MONDAY", label: "周一" },
+  { key: "TUESDAY", label: "周二" },
+  { key: "WEDNESDAY", label: "周三" },
+  { key: "THURSDAY", label: "周四" },
+  { key: "FRIDAY", label: "周五" },
+  { key: "SATURDAY", label: "周六" },
+  { key: "SUNDAY", label: "周日" },
+];
 
 type VersionRateKey = keyof Pick<
   ModelVersionInput,
-  | "inputCostPerMillion"
+  | "uncachedInputCostPerMillion"
+  | "cachedInputCostPerMillion"
   | "outputCostPerMillion"
-  | "reasoningCostPerMillion"
-  | "cacheReadCostPerMillion"
-  | "cacheWriteCostPerMillion"
-  | "inputQuotaPerMillion"
+  | "uncachedInputQuotaPerMillion"
+  | "cachedInputQuotaPerMillion"
   | "outputQuotaPerMillion"
-  | "reasoningQuotaPerMillion"
-  | "cacheReadQuotaPerMillion"
-  | "cacheWriteQuotaPerMillion"
   | "minimumRequestQuota"
 >;
 
 const costFields: Array<{ name: VersionRateKey; label: string }> = [
-  { name: "inputCostPerMillion", label: "输入 Token" },
-  { name: "outputCostPerMillion", label: "输出 Token" },
-  { name: "reasoningCostPerMillion", label: "推理 Token" },
-  { name: "cacheReadCostPerMillion", label: "缓存读取" },
-  { name: "cacheWriteCostPerMillion", label: "缓存写入" },
+  { name: "uncachedInputCostPerMillion", label: "未缓存输入" },
+  { name: "cachedInputCostPerMillion", label: "缓存命中输入" },
+  { name: "outputCostPerMillion", label: "输出（含推理）" },
 ];
 
 const quotaFields: Array<{ name: VersionRateKey; label: string }> = [
-  { name: "inputQuotaPerMillion", label: "输入 Token" },
-  { name: "outputQuotaPerMillion", label: "输出 Token" },
-  { name: "reasoningQuotaPerMillion", label: "推理 Token" },
-  { name: "cacheReadQuotaPerMillion", label: "缓存读取" },
-  { name: "cacheWriteQuotaPerMillion", label: "缓存写入" },
+  { name: "uncachedInputQuotaPerMillion", label: "未缓存输入" },
+  { name: "cachedInputQuotaPerMillion", label: "缓存命中输入" },
+  { name: "outputQuotaPerMillion", label: "输出（含推理）" },
 ];
 
 export function ModelCatalogPage() {
@@ -91,6 +118,9 @@ export function ModelCatalogPage() {
     [models, selectedModelId],
   );
   const activeProviders = providers.filter((provider) => provider.status === "ACTIVE");
+  const editorProviders = providers.filter((provider) =>
+    provider.status === "ACTIVE" || provider.id === selectedModel?.draft?.providerId,
+  );
 
   async function load() {
     setLoading(true);
@@ -124,20 +154,17 @@ export function ModelCatalogPage() {
       delete next[updated.modelId];
       return next;
     });
+    setHistoryModelId((current) => current === updated.modelId ? null : current);
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const providerId = numberValue(form, "providerId");
-    const version = versionInput(form);
+  async function save({ code, providerId, version }: ModelEditorSubmission) {
     const operation = selectedModel ? `save:${selectedModel.modelId}` : "create";
     setPending(operation);
     clearFeedback();
     try {
       const updated = selectedModel
         ? await updateModelDraft(selectedModel, providerId, version)
-        : await createModel({ code: textValue(form, "code"), providerId, version });
+        : await createModel({ code, providerId, version });
       upsert(updated);
       setSelectedModelId(updated.modelId);
       setNotice(selectedModel ? `${version.displayName} 的草稿已保存。` : `${version.displayName} 已创建为草稿。`);
@@ -156,6 +183,31 @@ export function ModelCatalogPage() {
       upsert(updated);
       setSelectedModelId(updated.modelId);
       setNotice(`${updated.draft?.displayName ?? updated.code} 的新草稿已创建。`);
+    } catch (reason) {
+      setError(message(reason));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function discardDraft(model: AdminModel) {
+    const draft = model.draft;
+    const published = model.published;
+    if (!draft) return;
+    const removesModel = !published;
+    const confirmed = window.confirm(published
+      ? `确认放弃 ${draft.displayName} v${draft.versionNo} 草稿？线上 v${published.versionNo} 不会受到影响。`
+      : `确认放弃 ${draft.displayName} 的草稿？该模型尚未发布，放弃后整个未发布模型都会被删除。`);
+    if (!confirmed) return;
+
+    setPending(`discard:${model.modelId}`);
+    clearFeedback();
+    try {
+      await discardModelDraft(model);
+      if (selectedModelId === model.modelId) setSelectedModelId(null);
+      if (historyModelId === model.modelId) setHistoryModelId(null);
+      await load();
+      setNotice(removesModel ? `${model.code} 的未发布模型已删除。` : `${model.code} 的草稿已放弃，线上版本保持不变。`);
     } catch (reason) {
       setError(message(reason));
     } finally {
@@ -293,8 +345,9 @@ export function ModelCatalogPage() {
               key={model.modelId}
               model={model}
               pending={pending}
-              provider={providerFor(providers, model.draft?.providerId ?? model.published?.providerId)}
+              providers={providers}
               onEdit={() => setSelectedModelId(model.modelId)}
+              onDiscard={() => void discardDraft(model)}
               onHistory={() => void toggleHistory(model)}
               onPublish={() => void publish(model)}
               onStartDraft={() => void startDraft(model)}
@@ -309,8 +362,9 @@ export function ModelCatalogPage() {
             : `new:${newFormVersion}`}
           model={selectedModel}
           pending={pending !== null}
-          providers={activeProviders}
+          providers={editorProviders}
           onCancel={selectedModel ? beginCreate : undefined}
+          onDiscard={selectedModel?.draft ? () => void discardDraft(selectedModel) : undefined}
           onSubmit={save}
         />
       </section>
@@ -320,28 +374,31 @@ export function ModelCatalogPage() {
 
 function ModelCard({
   model,
-  provider,
+  providers,
   history,
   historyOpen,
   pending,
   onEdit,
+  onDiscard,
   onStartDraft,
   onPublish,
   onToggleStatus,
   onHistory,
 }: {
   model: AdminModel;
-  provider?: ModelProvider;
+  providers: ModelProvider[];
   history?: ModelVersion[];
   historyOpen: boolean;
   pending: string | null;
   onEdit: () => void;
+  onDiscard: () => void;
   onStartDraft: () => void;
   onPublish: () => void;
   onToggleStatus: () => void;
   onHistory: () => void;
 }) {
   const current = model.draft ?? model.published;
+  const provider = providerFor(providers, current?.providerId);
   const isBusy = pending?.endsWith(`:${model.modelId}`) ?? false;
 
   return (
@@ -392,13 +449,23 @@ function ModelCard({
               <CloudUpload size={15} /> 发布 v{model.draft.versionNo}
             </Button>
           )}
+          {model.draft && (
+            <Button isDisabled={isBusy} onPress={onDiscard} size="sm" variant="danger-soft">
+              <Trash2 size={15} /> 放弃草稿
+            </Button>
+          )}
           <Button isDisabled={isBusy} onPress={onHistory} size="sm" variant="tertiary">
             <History size={15} /> {historyOpen ? "收起版本" : "版本记录"}
           </Button>
         </div>
 
         {historyOpen && (
-          <VersionHistory loading={pending === `history:${model.modelId}`} versions={history} />
+          <VersionHistory
+            loading={pending === `history:${model.modelId}`}
+            modelCode={model.code}
+            providers={providers}
+            versions={history}
+          />
         )}
       </Card.Content>
     </Card>
@@ -411,16 +478,107 @@ function ModelEditor({
   pending,
   onSubmit,
   onCancel,
+  onDiscard,
 }: {
   model: AdminModel | null;
   providers: ModelProvider[];
   pending: boolean;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSubmit: (submission: ModelEditorSubmission) => Promise<void>;
   onCancel?: () => void;
+  onDiscard?: () => void;
 }) {
   const draft = model?.draft;
-  const defaults = draft ? versionDefaults(draft) : emptyVersion();
+  const initialVersion = draft ? versionDefaults(draft) : emptyVersion();
+  const costPolicyDefaults = costTimePricingPolicyDefaults(initialVersion);
+  const quotaPolicyDefaults = quotaTimePricingPolicyDefaults(initialVersion);
   const canEdit = !model || Boolean(draft);
+  const [code, setCode] = useState(model?.code ?? "");
+  const [providerId, setProviderId] = useState(String(
+    draft?.providerId ?? providers.find((provider) => provider.status === "ACTIVE")?.id ?? providers[0]?.id ?? "",
+  ));
+  const [version, setVersion] = useState<ModelVersionInput>(initialVersion);
+  const [dirty, setDirty] = useState(false);
+  const [costCacheCreationEnabled, setCostCacheCreationEnabled] = useState(
+    (initialVersion.cacheCreationInputCostPerMillion ?? 0) > 0,
+  );
+  const [quotaCacheCreationEnabled, setQuotaCacheCreationEnabled] = useState(
+    (initialVersion.cacheCreationInputQuotaPerMillion ?? 0) > 0,
+  );
+  const [costTimePricingEnabled, setCostTimePricingEnabled] = useState(Boolean(initialVersion.costTimePricingPolicy));
+  const [costTimePricingZone, setCostTimePricingZone] = useState(costPolicyDefaults.zoneId);
+  const [costTimeRules, setCostTimeRules] = useState<EditableCostTimePricingRule[]>(
+    costPolicyDefaults.rules.map((rule) => editableCostTimeRule(rule, defaultCostRates(initialVersion))),
+  );
+  const [quotaTimePricingEnabled, setQuotaTimePricingEnabled] = useState(Boolean(initialVersion.quotaTimePricingPolicy));
+  const [quotaTimePricingZone, setQuotaTimePricingZone] = useState(quotaPolicyDefaults.zoneId);
+  const [defaultQuotaMultiplier, setDefaultQuotaMultiplier] = useState(quotaPolicyDefaults.defaultQuotaMultiplier);
+  const [quotaTimeRules, setQuotaTimeRules] = useState<EditableQuotaTimePricingRule[]>(
+    quotaPolicyDefaults.rules.map((rule) => editableQuotaTimeRule(rule)),
+  );
+
+  function updateVersion(update: Partial<ModelVersionInput>) {
+    setVersion((current) => ({ ...current, ...update }));
+    setDirty(true);
+  }
+
+  function addCostTimeRule() {
+    setCostTimeRules((current) => [
+      ...current,
+      editableCostTimeRule(undefined, defaultCostRates(version), current.length + 1),
+    ]);
+    setDirty(true);
+  }
+
+  function updateCostTimeRule(id: string, update: Partial<EditableCostTimePricingRule>) {
+    setCostTimeRules((current) => current.map((rule) => rule.id === id ? { ...rule, ...update } : rule));
+    setDirty(true);
+  }
+
+  function removeCostTimeRule(id: string) {
+    setCostTimeRules((current) => current.filter((rule) => rule.id !== id));
+    setDirty(true);
+  }
+
+  function addQuotaTimeRule() {
+    setQuotaTimeRules((current) => [
+      ...current,
+      editableQuotaTimeRule(undefined, current.length + 1),
+    ]);
+    setDirty(true);
+  }
+
+  function updateQuotaTimeRule(id: string, update: Partial<EditableQuotaTimePricingRule>) {
+    setQuotaTimeRules((current) => current.map((rule) => rule.id === id ? { ...rule, ...update } : rule));
+    setDirty(true);
+  }
+
+  function removeQuotaTimeRule(id: string) {
+    setQuotaTimeRules((current) => current.filter((rule) => rule.id !== id));
+    setDirty(true);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const submittedVersion: ModelVersionInput = {
+      ...version,
+      cacheCreationInputCostPerMillion: costCacheCreationEnabled
+        ? version.cacheCreationInputCostPerMillion ?? 0
+        : undefined,
+      costTimePricingPolicy: costTimePricingEnabled ? {
+        zoneId: costTimePricingZone.trim(),
+        rules: costTimeRules.map(costTimeRuleInput),
+      } : undefined,
+      cacheCreationInputQuotaPerMillion: quotaCacheCreationEnabled
+        ? version.cacheCreationInputQuotaPerMillion ?? 0
+        : undefined,
+      quotaTimePricingPolicy: quotaTimePricingEnabled ? {
+        zoneId: quotaTimePricingZone.trim(),
+        defaultQuotaMultiplier,
+        rules: quotaTimeRules.map(quotaTimeRuleInput),
+      } : undefined,
+    };
+    void onSubmit({ code: code.trim(), providerId: Number(providerId), version: submittedVersion });
+  }
 
   return (
     <Card className="xl:sticky xl:top-24" variant="default">
@@ -431,7 +589,9 @@ function ModelEditor({
         <div>
           <Card.Title>{model ? "编辑模型草稿" : "新增模型"}</Card.Title>
           <Card.Description>
-            {model ? `${model.code} · 草稿 v${draft?.versionNo ?? "-"}` : "创建后先进入草稿状态"}
+            {model
+              ? `${model.code} · 草稿 v${draft?.versionNo ?? "-"} · ${dirty ? "有未保存修改" : "已保存"}`
+              : "创建后先进入草稿状态"}
           </Card.Description>
         </div>
       </Card.Header>
@@ -441,34 +601,66 @@ function ModelEditor({
             当前模型没有草稿，请先在左侧点击“从线上版本创建草稿”。
           </div>
         ) : (
-          <form className="space-y-6" onSubmit={onSubmit}>
+          <form className="space-y-6" onSubmit={submit}>
             <EditorSection icon={SlidersHorizontal} title="基础信息">
-              {!model && (
+              {model ? (
+                <TextField fullWidth>
+                  <Label>模型编码</Label>
+                  <Input fullWidth readOnly value={code} />
+                  <p className="mt-1 text-xs text-muted">模型编码创建后保持不变，用于稳定的网关调用标识。</p>
+                </TextField>
+              ) : (
                 <TextField fullWidth isRequired name="code">
                   <Label>模型编码</Label>
-                  <Input fullWidth placeholder="例如 gpt-4o-mini" />
+                  <Input
+                    fullWidth
+                    onChange={(event) => { setCode(event.target.value); setDirty(true); }}
+                    placeholder="例如 gpt-4o-mini"
+                    value={code}
+                  />
                 </TextField>
               )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <TextField fullWidth isRequired name="displayName">
                   <Label>显示名称</Label>
-                  <Input defaultValue={defaults.displayName} fullWidth placeholder="例如 GPT-4o mini" />
+                  <Input
+                    fullWidth
+                    onChange={(event) => updateVersion({ displayName: event.target.value })}
+                    placeholder="例如 GPT-4o mini"
+                    value={version.displayName}
+                  />
                 </TextField>
                 <TextField fullWidth isRequired name="upstreamModel">
                   <Label>上游模型 ID</Label>
-                  <Input defaultValue={defaults.upstreamModel} fullWidth placeholder="例如 gpt-4o-mini" />
+                  <Input
+                    fullWidth
+                    onChange={(event) => updateVersion({ upstreamModel: event.target.value })}
+                    placeholder="例如 gpt-4o-mini"
+                    value={version.upstreamModel}
+                  />
                 </TextField>
               </div>
               <TextField fullWidth name="description">
                 <Label>模型说明</Label>
-                <TextArea defaultValue={defaults.description} fullWidth placeholder="面向用户展示的简短说明" rows={2} />
+                <TextArea
+                  fullWidth
+                  onChange={(event) => updateVersion({ description: event.target.value })}
+                  placeholder="面向用户展示的简短说明"
+                  rows={2}
+                  value={version.description}
+                />
               </TextField>
               <Select
-                defaultSelectedKey={String(draft?.providerId ?? providers[0]?.id ?? "")}
                 fullWidth
                 isRequired
                 name="providerId"
+                onSelectionChange={(key) => {
+                  if (!key) return;
+                  setProviderId(String(key));
+                  setDirty(true);
+                }}
                 placeholder="请选择供应商"
+                selectedKey={providerId}
                 variant="secondary"
               >
                 <Label>模型供应商</Label>
@@ -482,7 +674,9 @@ function ModelEditor({
                       <ListBox.Item id={String(provider.id)} key={provider.id} textValue={provider.name}>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{provider.name}</p>
-                          <p className="truncate text-xs text-muted">{protocolLabel(provider.protocolType)} · {provider.baseUrl}</p>
+                          <p className="truncate text-xs text-muted">
+                            {protocolLabel(provider.protocolType)} · {provider.status === "ACTIVE" ? "已启用" : "已停用"} · {provider.baseUrl}
+                          </p>
                         </div>
                         <ListBox.ItemIndicator />
                       </ListBox.Item>
@@ -491,27 +685,40 @@ function ModelEditor({
                 </Select.Popover>
               </Select>
               <div className="grid gap-4 sm:grid-cols-2">
-                <NumericField defaultValue={defaults.contextWindow} label="上下文窗口" name="contextWindow" step="1" />
-                <NumericField defaultValue={defaults.maxOutputTokens} label="最大输出 Token" name="maxOutputTokens" step="1" />
+                <NumericField
+                  label="上下文窗口"
+                  name="contextWindow"
+                  onChange={(value) => updateVersion({ contextWindow: value })}
+                  step="1"
+                  value={version.contextWindow}
+                />
+                <NumericField
+                  label="最大输出 Token"
+                  name="maxOutputTokens"
+                  onChange={(value) => updateVersion({ maxOutputTokens: value })}
+                  step="1"
+                  value={version.maxOutputTokens}
+                />
               </div>
             </EditorSection>
 
             <EditorSection icon={CheckCircle2} title="模型能力">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Capability defaultSelected={defaults.supportsReasoning} label="推理 / Thinking" name="supportsReasoning" />
-                <Capability defaultSelected={defaults.supportsTools} label="工具调用" name="supportsTools" />
-                <Capability defaultSelected={defaults.supportsVision} label="图片输入" name="supportsVision" />
-                <Capability defaultSelected={defaults.supportsJson} label="JSON 输出" name="supportsJson" />
+                <Capability isSelected={version.supportsReasoning} label="推理 / Thinking" name="supportsReasoning" onChange={(selected) => updateVersion({ supportsReasoning: selected })} />
+                <Capability isSelected={version.supportsTools} label="工具调用" name="supportsTools" onChange={(selected) => updateVersion({ supportsTools: selected })} />
+                <Capability isSelected={version.supportsVision} label="图片输入" name="supportsVision" onChange={(selected) => updateVersion({ supportsVision: selected })} />
+                <Capability isSelected={version.supportsJson} label="JSON 输出" name="supportsJson" onChange={(selected) => updateVersion({ supportsJson: selected })} />
               </div>
             </EditorSection>
 
-            <EditorSection icon={CircleDollarSign} title="上游成本">
+            <EditorSection icon={CircleDollarSign} title="默认上游成本">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Select
-                  defaultSelectedKey={defaults.costCurrency}
                   fullWidth
                   isRequired
                   name="costCurrency"
+                  onSelectionChange={(key) => key && updateVersion({ costCurrency: String(key) })}
+                  selectedKey={version.costCurrency}
                   variant="secondary"
                 >
                   <Label>成本币种</Label>
@@ -524,44 +731,185 @@ function ModelEditor({
                   </Select.Popover>
                 </Select>
               </div>
-              <p className="text-xs text-muted">以下价格均为每 100 万 Token 的真实供应商成本。</p>
+              <p className="text-xs leading-5 text-muted">
+                未命中时段成本覆盖规则时使用这里的价格。金额单位由成本币种决定，当前为
+                <span className="font-medium text-foreground"> {version.costCurrency} / 百万 Token</span>；切换币种不会自动换算已填数值，
+                推理 Token 统一按输出价格计算。
+              </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {costFields.map((field) => (
                   <NumericField
-                    defaultValue={defaults[field.name]}
                     key={field.name}
-                    label={field.label}
+                    label={`${field.label}成本（${version.costCurrency} / 百万 Token）`}
                     name={field.name}
+                    onChange={(value) => updateVersion({ [field.name]: value } as Partial<ModelVersionInput>)}
+                    value={version[field.name]}
                   />
                 ))}
+                {costCacheCreationEnabled && (
+                  <NumericField
+                    label={`缓存创建输入成本（${version.costCurrency} / 百万 Token）`}
+                    name="cacheCreationInputCostPerMillion"
+                    onChange={(value) => updateVersion({ cacheCreationInputCostPerMillion: value })}
+                    value={version.cacheCreationInputCostPerMillion ?? 0}
+                  />
+                )}
+              </div>
+              <OptionalPricingToggle
+                description="仅在供应商明确返回并计费 cache creation usage 时开启。"
+                isSelected={costCacheCreationEnabled}
+                label="配置缓存创建输入成本"
+                name="costCacheCreationEnabled"
+                onChange={(selected) => { setCostCacheCreationEnabled(selected); setDirty(true); }}
+              />
+              <div className="rounded-xl border border-border bg-default/30 p-4">
+                <OptionalPricingToggle
+                  description="供应商在不同星期或时间段采用不同 Token 成本时开启；不会影响用户套餐 Credits。"
+                  isSelected={costTimePricingEnabled}
+                  label="启用上游成本时段规则"
+                  name="costTimePricingEnabled"
+                  onChange={(selected) => { setCostTimePricingEnabled(selected); setDirty(true); }}
+                />
+                {costTimePricingEnabled && (
+                  <div className="mt-5 space-y-5 border-t border-separator pt-5">
+                    <TextField fullWidth isRequired name="costTimePricingZone">
+                      <Label>上游成本计价时区</Label>
+                      <Input
+                        fullWidth
+                        onChange={(event) => { setCostTimePricingZone(event.target.value); setDirty(true); }}
+                        placeholder="Asia/Shanghai"
+                        value={costTimePricingZone}
+                      />
+                    </TextField>
+                    <TimeRuleHint />
+                    <div className="space-y-4">
+                      {costTimeRules.map((rule, index) => (
+                        <CostTimePricingRuleEditor
+                          costCurrency={version.costCurrency}
+                          index={index}
+                          key={rule.id}
+                          onChange={(update) => updateCostTimeRule(rule.id, update)}
+                          onRemove={() => removeCostTimeRule(rule.id)}
+                          rule={rule}
+                        />
+                      ))}
+                    </div>
+                    <Button onPress={addCostTimeRule} size="sm" variant="secondary">
+                      <Plus size={15} /> 添加上游成本时段
+                    </Button>
+                    {costTimeRules.length === 0 && (
+                      <p className="text-xs text-danger">启用上游成本时段后至少需要添加一条规则。</p>
+                    )}
+                  </div>
+                )}
               </div>
             </EditorSection>
 
-            <EditorSection icon={Archive} title="套餐额度计费">
+            <EditorSection icon={Archive} title="默认套餐额度费率">
               <p className="text-xs leading-5 text-muted">
-                额度费率与上游成本分开配置。至少一个费率或最低请求额度必须大于 0。
+                这里不是金额，而是用户套餐扣减额度，单位固定为 Credits。未命中时段规则时按这些费率和默认倍率计算；
+                1 Credit 的名义价值为 ¥0.05。至少一个费率或最低请求额度必须大于 0。
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {quotaFields.map((field) => (
                   <NumericField
-                    defaultValue={defaults[field.name]}
                     key={field.name}
-                    label={`${field.label} / 百万`}
+                    label={`${field.label}额度（Credits / 百万 Token）`}
                     name={field.name}
+                    onChange={(value) => updateVersion({ [field.name]: value } as Partial<ModelVersionInput>)}
+                    value={version[field.name]}
                   />
                 ))}
+                {quotaCacheCreationEnabled && (
+                  <NumericField
+                    label="缓存创建输入额度（Credits / 百万 Token）"
+                    name="cacheCreationInputQuotaPerMillion"
+                    onChange={(value) => updateVersion({ cacheCreationInputQuotaPerMillion: value })}
+                    value={version.cacheCreationInputQuotaPerMillion ?? 0}
+                  />
+                )}
                 <NumericField
-                  defaultValue={defaults.minimumRequestQuota}
-                  label="单次最低额度"
+                  label="单次最低额度（Credits）"
                   name="minimumRequestQuota"
+                  onChange={(value) => updateVersion({ minimumRequestQuota: value })}
+                  value={version.minimumRequestQuota}
                 />
+              </div>
+              <OptionalPricingToggle
+                description="未开启时，缓存创建用量不会单独扣除套餐额度。"
+                isSelected={quotaCacheCreationEnabled}
+                label="缓存创建输入单独扣减额度"
+                name="quotaCacheCreationEnabled"
+                onChange={(selected) => { setQuotaCacheCreationEnabled(selected); setDirty(true); }}
+              />
+              <div className="rounded-xl border border-border bg-default/30 p-4">
+                <OptionalPricingToggle
+                  description="面向用户的套餐在不同时段采用不同额度倍率时开启；不会改变供应商成本。"
+                  isSelected={quotaTimePricingEnabled}
+                  label="启用套餐额度时段规则"
+                  name="quotaTimePricingEnabled"
+                  onChange={(selected) => { setQuotaTimePricingEnabled(selected); setDirty(true); }}
+                />
+                {quotaTimePricingEnabled && (
+                  <div className="mt-5 space-y-5 border-t border-separator pt-5">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <TextField fullWidth isRequired name="quotaTimePricingZone">
+                        <Label>套餐额度计价时区</Label>
+                        <Input
+                          fullWidth
+                          onChange={(event) => { setQuotaTimePricingZone(event.target.value); setDirty(true); }}
+                          placeholder="Asia/Shanghai"
+                          value={quotaTimePricingZone}
+                        />
+                      </TextField>
+                      <NumericField
+                        label="未命中规则的额度倍率"
+                        min="0.000001"
+                        name="defaultQuotaMultiplier"
+                        onChange={(value) => { setDefaultQuotaMultiplier(value); setDirty(true); }}
+                        value={defaultQuotaMultiplier}
+                      />
+                    </div>
+                    <TimeRuleHint />
+                    <div className="space-y-4">
+                      {quotaTimeRules.map((rule, index) => (
+                        <QuotaTimePricingRuleEditor
+                          index={index}
+                          key={rule.id}
+                          onChange={(update) => updateQuotaTimeRule(rule.id, update)}
+                          onRemove={() => removeQuotaTimeRule(rule.id)}
+                          rule={rule}
+                        />
+                      ))}
+                    </div>
+                    <Button onPress={addQuotaTimeRule} size="sm" variant="secondary">
+                      <Plus size={15} /> 添加套餐额度时段
+                    </Button>
+                    {quotaTimeRules.length === 0 && (
+                      <p className="text-xs text-danger">启用套餐额度时段后至少需要添加一条规则。</p>
+                    )}
+                  </div>
+                )}
               </div>
             </EditorSection>
 
             <div className="flex justify-end gap-2">
-              {onCancel && <Button onPress={onCancel} variant="tertiary">取消编辑</Button>}
-              <Button fullWidth={!onCancel} isDisabled={pending || providers.length === 0} type="submit" variant="primary">
-                {pending ? "正在保存…" : model ? "保存草稿" : "创建模型草稿"}
+              {onDiscard && (
+                <Button isDisabled={pending} onPress={onDiscard} variant="danger-soft">
+                  <Trash2 size={15} /> 放弃草稿
+                </Button>
+              )}
+              {onCancel && <Button onPress={onCancel} variant="tertiary">关闭编辑</Button>}
+              <Button
+                fullWidth={!onCancel}
+                isDisabled={pending || providers.length === 0
+                  || (Boolean(model) && !dirty)
+                  || (costTimePricingEnabled && costTimeRules.length === 0)
+                  || (quotaTimePricingEnabled && quotaTimeRules.length === 0)}
+                type="submit"
+                variant="primary"
+              >
+                {pending ? "正在保存…" : model ? dirty ? "保存草稿" : "草稿已保存" : "创建模型草稿"}
               </Button>
             </div>
           </form>
@@ -586,9 +934,14 @@ function EditorSection({ icon: Icon, title, children }: {
   );
 }
 
-function Capability({ name, label, defaultSelected }: { name: string; label: string; defaultSelected: boolean }) {
+function Capability({ name, label, isSelected, onChange }: {
+  name: string;
+  label: string;
+  isSelected: boolean;
+  onChange: (selected: boolean) => void;
+}) {
   return (
-    <Checkbox defaultSelected={defaultSelected} name={name} value="true">
+    <Checkbox isSelected={isSelected} name={name} onChange={onChange} value="true">
       <Checkbox.Content>
         <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
         <Label>{label}</Label>
@@ -597,21 +950,285 @@ function Capability({ name, label, defaultSelected }: { name: string; label: str
   );
 }
 
-function NumericField({ name, label, defaultValue, step = "0.000001" }: {
+function OptionalPricingToggle({
+  name,
+  label,
+  description,
+  isSelected,
+  onChange,
+}: {
   name: string;
   label: string;
-  defaultValue: number;
+  description: string;
+  isSelected: boolean;
+  onChange: (selected: boolean) => void;
+}) {
+  return (
+    <Checkbox isSelected={isSelected} name={name} onChange={onChange} value="true">
+      <Checkbox.Content>
+        <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+        <div>
+          <Label>{label}</Label>
+          <p className="mt-1 text-xs leading-5 text-muted">{description}</p>
+        </div>
+      </Checkbox.Content>
+    </Checkbox>
+  );
+}
+
+function CostTimePricingRuleEditor({ rule, index, costCurrency, onChange, onRemove }: {
+  rule: EditableCostTimePricingRule;
+  index: number;
+  costCurrency: string;
+  onChange: (update: Partial<EditableCostTimePricingRule>) => void;
+  onRemove: () => void;
+}) {
+  function updateRate(key: keyof ModelRates, value: number) {
+    onChange({ costRates: { ...rule.costRates, [key]: value } });
+  }
+
+  function toggleDay(day: PricingDay, selected: boolean) {
+    const days = selected
+      ? [...rule.daysOfWeek, day]
+      : rule.daysOfWeek.filter((current) => current !== day);
+    onChange({ daysOfWeek: pricingDays.map(({ key }) => key).filter((key) => days.includes(key)) });
+  }
+
+  return (
+    <div className="space-y-4 rounded-xl border border-border bg-background/40 p-4">
+      <div className="flex items-start gap-3">
+        <TextField className="flex-1" fullWidth isRequired>
+          <Label>规则名称</Label>
+          <Input
+            fullWidth
+            maxLength={80}
+            onChange={(event) => onChange({ name: event.target.value })}
+            placeholder={`例如 工作日峰时 ${index + 1}`}
+            value={rule.name}
+          />
+        </TextField>
+        <Button aria-label="删除时段规则" className="mt-6" isIconOnly onPress={onRemove} size="sm" variant="tertiary">
+          <Trash2 size={15} />
+        </Button>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs text-muted">生效星期</p>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {pricingDays.map((day) => (
+            <Checkbox
+              isSelected={rule.daysOfWeek.includes(day.key)}
+              key={day.key}
+              onChange={(selected) => toggleDay(day.key, selected)}
+            >
+              <Checkbox.Content>
+                <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                <Label>{day.label}</Label>
+              </Checkbox.Content>
+            </Checkbox>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <ControlledField
+          label="开始时间"
+          onChange={(value) => onChange({ startTime: value })}
+          type="time"
+          value={rule.startTime.slice(0, 5)}
+        />
+        <ControlledField
+          label="结束时间"
+          onChange={(value) => onChange({ endTime: value })}
+          type="time"
+          value={rule.endTime.slice(0, 5)}
+        />
+      </div>
+
+      <div className="space-y-4 border-t border-separator pt-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <ControlledField
+            label={`未缓存输入成本（${costCurrency} / 百万 Token）`}
+            min="0"
+            onChange={(value) => updateRate("uncachedInputPerMillion", Number(value))}
+            step="0.000001"
+            type="number"
+            value={String(rule.costRates.uncachedInputPerMillion)}
+          />
+          <ControlledField
+            label={`缓存命中输入成本（${costCurrency} / 百万 Token）`}
+            min="0"
+            onChange={(value) => updateRate("cachedInputPerMillion", Number(value))}
+            step="0.000001"
+            type="number"
+            value={String(rule.costRates.cachedInputPerMillion)}
+          />
+          <ControlledField
+            label={`输出成本（含推理，${costCurrency} / 百万 Token）`}
+            min="0"
+            onChange={(value) => updateRate("outputPerMillion", Number(value))}
+            step="0.000001"
+            type="number"
+            value={String(rule.costRates.outputPerMillion)}
+          />
+          {rule.cacheCreationEnabled && (
+            <ControlledField
+              label={`缓存创建输入成本（${costCurrency} / 百万 Token）`}
+              min="0"
+              onChange={(value) => updateRate("cacheCreationInputPerMillion", Number(value))}
+              step="0.000001"
+              type="number"
+              value={String(rule.costRates.cacheCreationInputPerMillion)}
+            />
+          )}
+        </div>
+        <OptionalPricingToggle
+          description="仅在该供应商对此时段的 cache creation usage 单独计费时开启。"
+          isSelected={rule.cacheCreationEnabled}
+          label="该时段包含缓存创建输入成本"
+          name={`costCacheCreation:${rule.id}`}
+          onChange={(selected) => onChange({ cacheCreationEnabled: selected })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function QuotaTimePricingRuleEditor({ rule, index, onChange, onRemove }: {
+  rule: EditableQuotaTimePricingRule;
+  index: number;
+  onChange: (update: Partial<EditableQuotaTimePricingRule>) => void;
+  onRemove: () => void;
+}) {
+  function toggleDay(day: PricingDay, selected: boolean) {
+    const days = selected
+      ? [...rule.daysOfWeek, day]
+      : rule.daysOfWeek.filter((current) => current !== day);
+    onChange({ daysOfWeek: pricingDays.map(({ key }) => key).filter((key) => days.includes(key)) });
+  }
+
+  return (
+    <div className="space-y-4 rounded-xl border border-border bg-background/40 p-4">
+      <div className="flex items-start gap-3">
+        <TextField className="flex-1" fullWidth isRequired>
+          <Label>规则名称</Label>
+          <Input
+            fullWidth
+            maxLength={80}
+            onChange={(event) => onChange({ name: event.target.value })}
+            placeholder={`例如 工作日峰时 ${index + 1}`}
+            value={rule.name}
+          />
+        </TextField>
+        <Button aria-label="删除套餐额度时段" className="mt-6" isIconOnly onPress={onRemove} size="sm" variant="tertiary">
+          <Trash2 size={15} />
+        </Button>
+      </div>
+      <div>
+        <p className="mb-2 text-xs text-muted">生效星期</p>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {pricingDays.map((day) => (
+            <Checkbox
+              isSelected={rule.daysOfWeek.includes(day.key)}
+              key={day.key}
+              onChange={(selected) => toggleDay(day.key, selected)}
+            >
+              <Checkbox.Content>
+                <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                <Label>{day.label}</Label>
+              </Checkbox.Content>
+            </Checkbox>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <ControlledField
+          label="开始时间"
+          onChange={(value) => onChange({ startTime: value })}
+          type="time"
+          value={rule.startTime.slice(0, 5)}
+        />
+        <ControlledField
+          label="结束时间"
+          onChange={(value) => onChange({ endTime: value })}
+          type="time"
+          value={rule.endTime.slice(0, 5)}
+        />
+        <ControlledField
+          label="套餐额度倍率"
+          min="0.000001"
+          onChange={(value) => onChange({ quotaMultiplier: Number(value) })}
+          step="0.000001"
+          type="number"
+          value={String(rule.quotaMultiplier)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TimeRuleHint() {
+  return (
+    <div className="flex items-start gap-2 rounded-xl bg-default/50 px-3 py-2.5 text-xs leading-5 text-muted">
+      <Clock3 className="mt-0.5 shrink-0" size={15} />
+      星期表示规则的开始日；22:00–06:00 会延续到次日。多条规则可以选择相同星期，只要当天的时间段
+      不重叠即可；结束时间不包含在当前规则内。
+    </div>
+  );
+}
+
+function ControlledField({ label, value, type, onChange, min, step }: {
+  label: string;
+  value: string;
+  type: "number" | "time";
+  onChange: (value: string) => void;
+  min?: string;
   step?: string;
 }) {
   return (
-    <TextField fullWidth isRequired name={name}>
+    <TextField fullWidth isRequired>
       <Label>{label}</Label>
-      <Input defaultValue={String(defaultValue)} fullWidth min="0" step={step} type="number" />
+      <Input
+        fullWidth
+        min={min}
+        onChange={(event) => onChange(event.target.value)}
+        step={step}
+        type={type}
+        value={value}
+      />
     </TextField>
   );
 }
 
-function VersionHistory({ versions, loading }: { versions?: ModelVersion[]; loading: boolean }) {
+function NumericField({ name, label, value, onChange, step = "0.000001", min = "0" }: {
+  name: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  step?: string;
+  min?: string;
+}) {
+  return (
+    <TextField fullWidth isRequired name={name}>
+      <Label>{label}</Label>
+      <Input
+        fullWidth
+        min={min}
+        onChange={(event) => onChange(Number(event.target.value))}
+        step={step}
+        type="number"
+        value={String(value)}
+      />
+    </TextField>
+  );
+}
+
+function VersionHistory({ versions, loading, modelCode, providers }: {
+  versions?: ModelVersion[];
+  loading: boolean;
+  modelCode: string;
+  providers: ModelProvider[];
+}) {
   return (
     <div className="rounded-xl border border-border bg-default/30 p-4">
       <p className="mb-3 text-sm font-medium">版本记录</p>
@@ -622,23 +1239,180 @@ function VersionHistory({ versions, loading }: { versions?: ModelVersion[]; load
       ) : (
         <div className="space-y-3">
           {versions.map((version) => (
-            <div className="flex flex-col gap-2 border-b border-separator pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center" key={version.id}>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">v{version.versionNo}</span>
-                  <VersionStatus status={version.status} />
+            <details className="group rounded-xl border border-border bg-background/60" key={version.id}>
+              <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">v{version.versionNo} · {version.displayName}</span>
+                    <VersionStatus status={version.status} />
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted">
+                    {version.upstreamModel} · {providerFor(providers, version.providerId)?.name ?? `供应商 #${version.providerId}`} · {formatDate(version.publishedAt ?? version.createdAt)}
+                  </p>
                 </div>
-                <p className="mt-1 truncate text-xs text-muted">
-                  {version.upstreamModel} · {formatDate(version.publishedAt ?? version.createdAt)}
-                </p>
-              </div>
-              <span className="font-mono text-xs text-muted" title={version.pricingVersion}>
-                {version.pricingVersion.slice(0, 8)}
-              </span>
-            </div>
+                <span className="hidden font-mono text-xs text-muted sm:inline" title={version.pricingVersion}>
+                  {version.pricingVersion.slice(0, 8)}
+                </span>
+                <ChevronDown className="shrink-0 text-muted transition-transform group-open:rotate-180" size={16} />
+              </summary>
+              <VersionDetails modelCode={modelCode} provider={providerFor(providers, version.providerId)} version={version} />
+            </details>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function VersionDetails({ version, modelCode, provider }: {
+  version: ModelVersion;
+  modelCode: string;
+  provider?: ModelProvider;
+}) {
+  return (
+    <div className="space-y-5 border-t border-separator px-4 py-4">
+      <VersionDetailSection title="基础信息">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <VersionInfo label="模型编码" mono value={modelCode} />
+          <VersionInfo label="显示名称" value={version.displayName} />
+          <VersionInfo label="上游模型 ID" mono value={version.upstreamModel} />
+          <VersionInfo label="供应商" value={provider?.name ?? `供应商 #${version.providerId}`} />
+          <VersionInfo label="API 格式" value={protocolLabel(version.protocolType)} />
+          <VersionInfo label="API Base URL" mono value={version.baseUrl} />
+          <VersionInfo label="上下文窗口" value={formatInteger(version.capabilities.contextWindow)} />
+          <VersionInfo label="最大输出 Token" value={formatInteger(version.capabilities.maxOutputTokens)} />
+          <VersionInfo label="模型能力" value={capabilitySummary(version)} />
+        </div>
+        <VersionInfo label="模型说明" value={version.description || "未填写"} />
+      </VersionDetailSection>
+
+      <VersionDetailSection title="默认上游成本">
+        <p className="text-xs leading-5 text-muted">
+          金额单位：{version.costCurrency} / 百万 Token；未命中时段覆盖规则时使用以下默认成本。
+        </p>
+        <RateGrid
+          cacheCreation={version.costRates.cacheCreationInputPerMillion}
+          cached={version.costRates.cachedInputPerMillion}
+          output={version.costRates.outputPerMillion}
+          suffix={`${version.costCurrency} / 百万 Token`}
+          uncached={version.costRates.uncachedInputPerMillion}
+        />
+        <CostTimePolicySnapshot currency={version.costCurrency} policy={version.costTimePricingPolicy} />
+      </VersionDetailSection>
+
+      <VersionDetailSection title="默认套餐额度费率">
+        <p className="text-xs leading-5 text-muted">
+          单位：Credits / 百万 Token；推理 Token 计入输出，未命中额度时段规则时使用以下默认费率。
+        </p>
+        <RateGrid
+          cacheCreation={version.quotaRates.cacheCreationInputPerMillion}
+          cached={version.quotaRates.cachedInputPerMillion}
+          output={version.quotaRates.outputPerMillion}
+          suffix="Credits / 百万 Token"
+          uncached={version.quotaRates.uncachedInputPerMillion}
+        />
+        <VersionInfo label="单次最低额度" value={`${formatDecimal(version.quotaRates.minimumRequestQuota)} Credits`} />
+        <QuotaTimePolicySnapshot policy={version.quotaTimePricingPolicy} />
+      </VersionDetailSection>
+
+      <VersionDetailSection title="版本元数据">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <VersionInfo label="版本 ID" mono value={version.id} />
+          <VersionInfo label="计价版本" mono value={version.pricingVersion} />
+          <VersionInfo label="数据修订号" value={String(version.revision)} />
+          <VersionInfo label="创建时间" value={formatDate(version.createdAt)} />
+          <VersionInfo label="更新时间" value={formatDate(version.updatedAt)} />
+          <VersionInfo label="发布时间" value={version.publishedAt ? formatDate(version.publishedAt) : "尚未发布"} />
+        </div>
+      </VersionDetailSection>
+    </div>
+  );
+}
+
+function VersionDetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h4 className="text-xs font-medium text-foreground">{title}</h4>
+      {children}
+    </section>
+  );
+}
+
+function VersionInfo({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0 rounded-lg bg-default/40 px-3 py-2.5">
+      <p className="text-xs text-muted">{label}</p>
+      <p className={`mt-1 break-words text-sm ${mono ? "font-mono text-xs" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function RateGrid({ uncached, cached, cacheCreation, output, suffix }: {
+  uncached: number;
+  cached: number;
+  cacheCreation: number;
+  output: number;
+  suffix: string;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <VersionInfo label="未缓存输入" value={`${formatDecimal(uncached)} ${suffix}`} />
+      <VersionInfo label="缓存命中输入" value={`${formatDecimal(cached)} ${suffix}`} />
+      <VersionInfo
+        label="缓存创建输入"
+        value={cacheCreation > 0 ? `${formatDecimal(cacheCreation)} ${suffix}` : "未单独配置"}
+      />
+      <VersionInfo label="输出（含推理）" value={`${formatDecimal(output)} ${suffix}`} />
+    </div>
+  );
+}
+
+function CostTimePolicySnapshot({ policy, currency }: {
+  policy?: CostTimePricingPolicy | null;
+  currency: string;
+}) {
+  if (!policy) {
+    return <p className="rounded-lg bg-default/40 px-3 py-2.5 text-xs text-muted">上游成本时段规则未启用。</p>;
+  }
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-3">
+      <p className="text-xs font-medium">上游成本时段规则 · {policy.zoneId}</p>
+      {policy.rules.map((rule, index) => (
+        <div className="space-y-3 border-t border-separator pt-3 first:border-0 first:pt-0" key={`${rule.name}:${index}`}>
+          <p className="text-sm font-medium">{rule.name}</p>
+          <p className="text-xs text-muted">{formatPricingDays(rule.daysOfWeek)} · {formatTime(rule.startTime)}–{formatTime(rule.endTime)}</p>
+          <RateGrid
+            cacheCreation={rule.costRates.cacheCreationInputPerMillion}
+            cached={rule.costRates.cachedInputPerMillion}
+            output={rule.costRates.outputPerMillion}
+            suffix={`${currency} / 百万 Token`}
+            uncached={rule.costRates.uncachedInputPerMillion}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function QuotaTimePolicySnapshot({ policy }: { policy?: QuotaTimePricingPolicy | null }) {
+  if (!policy) {
+    return <p className="rounded-lg bg-default/40 px-3 py-2.5 text-xs text-muted">套餐额度时段规则未启用。</p>;
+  }
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-3">
+      <div>
+        <p className="text-xs font-medium">套餐额度时段规则 · {policy.zoneId}</p>
+        <p className="mt-1 text-xs text-muted">未命中规则倍率：×{formatDecimal(policy.defaultQuotaMultiplier)}</p>
+      </div>
+      {policy.rules.map((rule, index) => (
+        <div className="flex flex-col gap-1 border-t border-separator pt-3 first:border-0 first:pt-0 sm:flex-row sm:items-center sm:justify-between" key={`${rule.name}:${index}`}>
+          <div>
+            <p className="text-sm font-medium">{rule.name}</p>
+            <p className="mt-1 text-xs text-muted">{formatPricingDays(rule.daysOfWeek)} · {formatTime(rule.startTime)}–{formatTime(rule.endTime)}</p>
+          </div>
+          <Chip color="accent" size="sm" variant="soft">额度 ×{formatDecimal(rule.quotaMultiplier)}</Chip>
+        </div>
+      ))}
     </div>
   );
 }
@@ -681,16 +1455,12 @@ function emptyVersion(): ModelVersionInput {
     supportsVision: false,
     supportsJson: true,
     costCurrency: "USD",
-    inputCostPerMillion: 0,
+    uncachedInputCostPerMillion: 0,
+    cachedInputCostPerMillion: 0,
     outputCostPerMillion: 0,
-    reasoningCostPerMillion: 0,
-    cacheReadCostPerMillion: 0,
-    cacheWriteCostPerMillion: 0,
-    inputQuotaPerMillion: 1,
+    uncachedInputQuotaPerMillion: 1,
+    cachedInputQuotaPerMillion: 0,
     outputQuotaPerMillion: 1,
-    reasoningQuotaPerMillion: 0,
-    cacheReadQuotaPerMillion: 0,
-    cacheWriteQuotaPerMillion: 0,
     minimumRequestQuota: 0,
   };
 }
@@ -707,52 +1477,98 @@ function versionDefaults(version: ModelVersion): ModelVersionInput {
     supportsVision: version.capabilities.vision,
     supportsJson: version.capabilities.json,
     costCurrency: version.costCurrency,
-    inputCostPerMillion: version.costRates.inputPerMillion,
+    uncachedInputCostPerMillion: version.costRates.uncachedInputPerMillion,
+    cachedInputCostPerMillion: version.costRates.cachedInputPerMillion,
+    cacheCreationInputCostPerMillion: version.costRates.cacheCreationInputPerMillion || undefined,
     outputCostPerMillion: version.costRates.outputPerMillion,
-    reasoningCostPerMillion: version.costRates.reasoningPerMillion,
-    cacheReadCostPerMillion: version.costRates.cacheReadPerMillion,
-    cacheWriteCostPerMillion: version.costRates.cacheWritePerMillion,
-    inputQuotaPerMillion: version.quotaRates.inputPerMillion,
+    costTimePricingPolicy: version.costTimePricingPolicy ?? undefined,
+    uncachedInputQuotaPerMillion: version.quotaRates.uncachedInputPerMillion,
+    cachedInputQuotaPerMillion: version.quotaRates.cachedInputPerMillion,
+    cacheCreationInputQuotaPerMillion: version.quotaRates.cacheCreationInputPerMillion || undefined,
     outputQuotaPerMillion: version.quotaRates.outputPerMillion,
-    reasoningQuotaPerMillion: version.quotaRates.reasoningPerMillion,
-    cacheReadQuotaPerMillion: version.quotaRates.cacheReadPerMillion,
-    cacheWriteQuotaPerMillion: version.quotaRates.cacheWritePerMillion,
     minimumRequestQuota: version.quotaRates.minimumRequestQuota,
+    quotaTimePricingPolicy: version.quotaTimePricingPolicy ?? undefined,
   };
 }
 
-function versionInput(form: FormData): ModelVersionInput {
+function defaultCostRates(defaults: ModelVersionInput): ModelRates {
   return {
-    displayName: textValue(form, "displayName"),
-    description: textValue(form, "description"),
-    upstreamModel: textValue(form, "upstreamModel"),
-    contextWindow: numberValue(form, "contextWindow"),
-    maxOutputTokens: numberValue(form, "maxOutputTokens"),
-    supportsReasoning: form.has("supportsReasoning"),
-    supportsTools: form.has("supportsTools"),
-    supportsVision: form.has("supportsVision"),
-    supportsJson: form.has("supportsJson"),
-    costCurrency: textValue(form, "costCurrency"),
-    inputCostPerMillion: numberValue(form, "inputCostPerMillion"),
-    outputCostPerMillion: numberValue(form, "outputCostPerMillion"),
-    reasoningCostPerMillion: numberValue(form, "reasoningCostPerMillion"),
-    cacheReadCostPerMillion: numberValue(form, "cacheReadCostPerMillion"),
-    cacheWriteCostPerMillion: numberValue(form, "cacheWriteCostPerMillion"),
-    inputQuotaPerMillion: numberValue(form, "inputQuotaPerMillion"),
-    outputQuotaPerMillion: numberValue(form, "outputQuotaPerMillion"),
-    reasoningQuotaPerMillion: numberValue(form, "reasoningQuotaPerMillion"),
-    cacheReadQuotaPerMillion: numberValue(form, "cacheReadQuotaPerMillion"),
-    cacheWriteQuotaPerMillion: numberValue(form, "cacheWriteQuotaPerMillion"),
-    minimumRequestQuota: numberValue(form, "minimumRequestQuota"),
+    uncachedInputPerMillion: defaults.uncachedInputCostPerMillion,
+    cachedInputPerMillion: defaults.cachedInputCostPerMillion,
+    cacheCreationInputPerMillion: defaults.cacheCreationInputCostPerMillion ?? 0,
+    outputPerMillion: defaults.outputCostPerMillion,
   };
 }
 
-function textValue(form: FormData, name: string): string {
-  return String(form.get(name) ?? "").trim();
+function costTimePricingPolicyDefaults(defaults: ModelVersionInput): CostTimePricingPolicy {
+  return defaults.costTimePricingPolicy ?? {
+    zoneId: "Asia/Shanghai",
+    rules: [],
+  };
 }
 
-function numberValue(form: FormData, name: string): number {
-  return Number(textValue(form, name));
+function quotaTimePricingPolicyDefaults(defaults: ModelVersionInput): QuotaTimePricingPolicy {
+  return defaults.quotaTimePricingPolicy ?? {
+    zoneId: "Asia/Shanghai",
+    defaultQuotaMultiplier: 1,
+    rules: [],
+  };
+}
+
+function editableCostTimeRule(
+  rule: CostTimePricingRule | undefined,
+  baseRates: ModelRates,
+  ordinal = 1,
+): EditableCostTimePricingRule {
+  const rates = rule?.costRates ?? baseRates;
+  return {
+    id: globalThis.crypto.randomUUID(),
+    name: rule?.name ?? `工作日峰时 ${ordinal}`,
+    daysOfWeek: rule?.daysOfWeek ?? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+    startTime: rule?.startTime ?? "09:00",
+    endTime: rule?.endTime ?? "12:00",
+    cacheCreationEnabled: (rates.cacheCreationInputPerMillion ?? 0) > 0,
+    costRates: { ...rates },
+  };
+}
+
+function costTimeRuleInput(rule: EditableCostTimePricingRule): CostTimePricingRule {
+  return {
+    name: rule.name,
+    daysOfWeek: rule.daysOfWeek,
+    startTime: rule.startTime,
+    endTime: rule.endTime,
+    costRates: {
+      ...rule.costRates,
+      cacheCreationInputPerMillion: rule.cacheCreationEnabled
+        ? rule.costRates.cacheCreationInputPerMillion
+        : 0,
+    },
+  };
+}
+
+function editableQuotaTimeRule(
+  rule: QuotaTimePricingRule | undefined,
+  ordinal = 1,
+): EditableQuotaTimePricingRule {
+  return {
+    id: globalThis.crypto.randomUUID(),
+    name: rule?.name ?? `工作日峰时 ${ordinal}`,
+    daysOfWeek: rule?.daysOfWeek ?? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+    startTime: rule?.startTime ?? "09:00",
+    endTime: rule?.endTime ?? "12:00",
+    quotaMultiplier: rule?.quotaMultiplier ?? 1,
+  };
+}
+
+function quotaTimeRuleInput(rule: EditableQuotaTimePricingRule): QuotaTimePricingRule {
+  return {
+    name: rule.name,
+    daysOfWeek: rule.daysOfWeek,
+    startTime: rule.startTime,
+    endTime: rule.endTime,
+    quotaMultiplier: rule.quotaMultiplier,
+  };
 }
 
 function providerFor(providers: ModelProvider[], id?: number): ModelProvider | undefined {
@@ -766,6 +1582,28 @@ function protocolLabel(protocolType: string): string {
     RESPONSES: "Responses",
   };
   return labels[protocolType] ?? protocolType;
+}
+
+function capabilitySummary(version: ModelVersion): string {
+  const labels = [
+    version.capabilities.reasoning ? "推理" : null,
+    version.capabilities.tools ? "工具调用" : null,
+    version.capabilities.vision ? "图片输入" : null,
+    version.capabilities.json ? "JSON 输出" : null,
+  ].filter(Boolean);
+  return labels.length > 0 ? labels.join("、") : "基础文本";
+}
+
+function formatPricingDays(days: PricingDay[]): string {
+  return pricingDays.filter((day) => days.includes(day.key)).map((day) => day.label).join("、");
+}
+
+function formatTime(value: string): string {
+  return value.slice(0, 5);
+}
+
+function formatDecimal(value: number): string {
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 6 }).format(value);
 }
 
 function formatInteger(value: number): string {

@@ -1,6 +1,6 @@
 # Lumora Cloud 工程架构
 
-最后同步：2026-08-29。
+最后同步：2026-09-01。
 
 ## 1. 工程边界
 
@@ -27,7 +27,7 @@ Desktop 与网页控制台使用独立登录会话。网页 URL 不携带 Deskto
 | `cloud-gateway` | 路由、凭据初验、上下文传递和粗粒度限流 | 46100 |
 | `user-service` | 注册、登录、设备会话、角色与审计 | 46101 |
 | `billing-service` | 套餐、订单、支付确认、周额度、预占、结算与不可变账本；钱包后续实现 | 46102 |
-| `model-catalog-service` | 模型目录、价格版本和配置发布 | 46103 |
+| `model-catalog-service` | 模型目录、Token 额度费率、多时段成本/额度倍率版本和配置发布 | 46103 |
 | `model-gateway-service` | 供应商流式代理、权威 Usage 和计费编排 | 46104 |
 
 `cloud-common` 只共享稳定错误和 Tracing 契约，`cloud-api` 只共享跨服务 DTO/Feign 契约；两者

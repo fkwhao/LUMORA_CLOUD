@@ -20,7 +20,7 @@ import java.util.function.Supplier;
 public class PublishedCatalogCache {
 
     private static final Logger log = LoggerFactory.getLogger(PublishedCatalogCache.class);
-    private static final String CACHE_KEY = "lumora:catalog:published:v1";
+    private static final String CACHE_KEY = "lumora:catalog:published:v3";
     private static final String GENERATION_KEY = "lumora:catalog:generation";
 
     private final StringRedisTemplate redis;

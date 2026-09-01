@@ -40,15 +40,43 @@ export interface ModelCapabilities {
 }
 
 export interface ModelRates {
-  inputPerMillion: number;
+  uncachedInputPerMillion: number;
+  cachedInputPerMillion: number;
+  cacheCreationInputPerMillion: number;
   outputPerMillion: number;
-  reasoningPerMillion: number;
-  cacheReadPerMillion: number;
-  cacheWritePerMillion: number;
 }
 
 export interface ModelQuotaRates extends ModelRates {
   minimumRequestQuota: number;
+}
+
+export type PricingDay = "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY" | "SUNDAY";
+
+export interface CostTimePricingRule {
+  name: string;
+  daysOfWeek: PricingDay[];
+  startTime: string;
+  endTime: string;
+  costRates: ModelRates;
+}
+
+export interface CostTimePricingPolicy {
+  zoneId: string;
+  rules: CostTimePricingRule[];
+}
+
+export interface QuotaTimePricingRule {
+  name: string;
+  daysOfWeek: PricingDay[];
+  startTime: string;
+  endTime: string;
+  quotaMultiplier: number;
+}
+
+export interface QuotaTimePricingPolicy {
+  zoneId: string;
+  defaultQuotaMultiplier: number;
+  rules: QuotaTimePricingRule[];
 }
 
 export interface ModelVersion {
@@ -67,7 +95,9 @@ export interface ModelVersion {
   capabilities: ModelCapabilities;
   costCurrency: string;
   costRates: ModelRates;
+  costTimePricingPolicy?: CostTimePricingPolicy | null;
   quotaRates: ModelQuotaRates;
+  quotaTimePricingPolicy?: QuotaTimePricingPolicy | null;
   publishedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -105,17 +135,17 @@ export interface ModelVersionInput {
   supportsVision: boolean;
   supportsJson: boolean;
   costCurrency: string;
-  inputCostPerMillion: number;
+  uncachedInputCostPerMillion: number;
+  cachedInputCostPerMillion: number;
+  cacheCreationInputCostPerMillion?: number;
   outputCostPerMillion: number;
-  reasoningCostPerMillion: number;
-  cacheReadCostPerMillion: number;
-  cacheWriteCostPerMillion: number;
-  inputQuotaPerMillion: number;
+  costTimePricingPolicy?: CostTimePricingPolicy;
+  uncachedInputQuotaPerMillion: number;
+  cachedInputQuotaPerMillion: number;
+  cacheCreationInputQuotaPerMillion?: number;
   outputQuotaPerMillion: number;
-  reasoningQuotaPerMillion: number;
-  cacheReadQuotaPerMillion: number;
-  cacheWriteQuotaPerMillion: number;
   minimumRequestQuota: number;
+  quotaTimePricingPolicy?: QuotaTimePricingPolicy;
 }
 
 export interface CreateModelInput {
@@ -180,6 +210,14 @@ export function updateModelDraft(
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expectedRevision: model.draft.revision, providerId, version }),
+  });
+}
+
+export function discardModelDraft(model: AdminModel): Promise<void> {
+  if (!model.draft) throw new Error("模型草稿不存在");
+  const revision = encodeURIComponent(String(model.draft.revision));
+  return apiFetch<void>(`/api/admin/catalog/models/${model.modelId}/draft?expectedRevision=${revision}`, {
+    method: "DELETE",
   });
 }
 

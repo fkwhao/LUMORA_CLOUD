@@ -1,12 +1,15 @@
 package com.lumora.cloud.catalog.service;
 
 import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
+import com.lumora.cloud.api.catalog.CatalogContracts.CostRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
 import com.lumora.cloud.catalog.error.ApiException;
 import com.lumora.cloud.catalog.persistence.entity.ModelVersionEntity;
 import com.lumora.cloud.catalog.persistence.mapper.CatalogQueryMapper;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.PublicModelResponse;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.QuotaTimePricingPolicy;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.QuotaTimePricingRule;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,10 +21,16 @@ public class PublishedCatalogService {
 
     private final CatalogQueryMapper queryMapper;
     private final PublishedCatalogCache cache;
+    private final TimePricingPolicyService timePricingPolicyService;
 
-    public PublishedCatalogService(CatalogQueryMapper queryMapper, PublishedCatalogCache cache) {
+    public PublishedCatalogService(
+            CatalogQueryMapper queryMapper,
+            PublishedCatalogCache cache,
+            TimePricingPolicyService timePricingPolicyService
+    ) {
         this.queryMapper = queryMapper;
         this.cache = cache;
+        this.timePricingPolicyService = timePricingPolicyService;
     }
 
     @Transactional(readOnly = true)
@@ -52,18 +61,38 @@ public class PublishedCatalogService {
                 entity.getActiveCredentialReference(), entity.getUpstreamModel(), new ModelCapabilities(
                         entity.getContextWindow(), entity.getMaxOutputTokens(), entity.getSupportsReasoning(),
                         entity.getSupportsTools(), entity.getSupportsVision(), entity.getSupportsJson()
-                ), new QuotaRates(
-                        entity.getInputQuotaPerMillion(), entity.getOutputQuotaPerMillion(),
-                        entity.getReasoningQuotaPerMillion(), entity.getCacheReadQuotaPerMillion(),
-                        entity.getCacheWriteQuotaPerMillion(), entity.getMinimumRequestQuota()
-                ), entity.getPublishedAt()
+                ), entity.getCostCurrency(), new CostRates(
+                        entity.getInputCostPerMillion(), entity.getCacheReadCostPerMillion(),
+                        entity.getCacheWriteCostPerMillion(), entity.getOutputCostPerMillion()
+                ), timePricingPolicyService.resolvedCostPolicy(entity), new QuotaRates(
+                        entity.getInputQuotaPerMillion(), entity.getCacheReadQuotaPerMillion(),
+                        entity.getCacheWriteQuotaPerMillion(), entity.getOutputQuotaPerMillion(),
+                        entity.getMinimumRequestQuota()
+                ), timePricingPolicyService.resolvedQuotaPolicy(entity), entity.getPublishedAt()
         );
     }
 
     private PublicModelResponse publicResponse(ResolvedModelConfig model) {
         return new PublicModelResponse(
                 model.modelCode(), model.displayName(), model.description(), model.pricingVersion(),
-                model.providerCode(), model.capabilities(), model.quotaRates(), model.publishedAt()
+                model.providerCode(), model.capabilities(), model.quotaRates(), publicQuotaPolicy(model),
+                model.publishedAt()
+        );
+    }
+
+    private QuotaTimePricingPolicy publicQuotaPolicy(ResolvedModelConfig model) {
+        if (model.quotaTimePricingPolicy() == null) {
+            return null;
+        }
+        return new QuotaTimePricingPolicy(
+                model.quotaTimePricingPolicy().zoneId(),
+                model.quotaTimePricingPolicy().defaultQuotaMultiplier(),
+                model.quotaTimePricingPolicy().rules().stream()
+                        .map(rule -> new QuotaTimePricingRule(
+                                rule.name(), rule.daysOfWeek(), rule.startTime(), rule.endTime(),
+                                rule.quotaMultiplier()
+                        ))
+                        .toList()
         );
     }
 }

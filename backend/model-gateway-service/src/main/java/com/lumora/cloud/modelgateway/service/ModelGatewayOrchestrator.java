@@ -27,6 +27,7 @@ import com.lumora.cloud.modelgateway.provider.StreamUsageTracker;
 import com.lumora.cloud.modelgateway.recovery.BillingRecoveryService;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
 import com.lumora.cloud.modelgateway.web.ModelGatewayResponse;
+import com.lumora.cloud.modelgateway.service.QuotaCalculator.PricingSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
@@ -121,12 +122,16 @@ public class ModelGatewayOrchestrator {
             ResolvedModelConfig model,
             RequestLease lease
     ) {
-        return Mono.fromCallable(() -> new PreparedCall(
-                        model,
-                        validator.upstreamBody(request, model),
-                        credentials.resolve(model.credentialReference()),
-                        quotaCalculator.maximum(model, request.requestedMaxOutputTokens())
-                ))
+        return Mono.fromCallable(() -> {
+                    PricingSnapshot pricing = quotaCalculator.snapshot(model, Instant.now());
+                    return new PreparedCall(
+                            model,
+                            validator.upstreamBody(request, model),
+                            credentials.resolve(model.credentialReference()),
+                            pricing,
+                            quotaCalculator.maximum(model, request.requestedMaxOutputTokens(), pricing)
+                    );
+                })
                 .subscribeOn(Schedulers.boundedElastic())
                 .onErrorResume(error -> requestLeases.release(lease).then(Mono.error(error)))
                 .flatMap(prepared -> concurrencyLimiter.acquire(context.userId(), model.modelCode())
@@ -144,6 +149,7 @@ public class ModelGatewayOrchestrator {
         ReserveRequest reserve = new ReserveRequest(
                 lease.billingRequestId(), context.clientRequestId(), context.userId(), call.model().modelCode(),
                 call.model().pricingVersion(), call.maximumQuota(),
+                call.pricing().pricingAt(), call.pricing().quotaMultiplier(), call.pricing().ruleName(),
                 Instant.now().plus(properties.provider().maxCallDuration()).plusSeconds(30)
         );
         return billing.reserve(reserve)
@@ -151,10 +157,10 @@ public class ModelGatewayOrchestrator {
                         .then(invokeProvider(context, request, call))
                         .flatMap(provider -> request.stream()
                                 ? Mono.just(streamingResponse(
-                                        context, lease, permit, call.model(), request.protocol(), provider
+                                        context, lease, permit, call, request.protocol(), provider
                                 ))
                                 : bufferedResponse(
-                                        context, lease, permit, call.model(), request.protocol(), provider
+                                        context, lease, permit, call, request.protocol(), provider
                                 )))
                 .onErrorResume(error -> handleBeforeResponseFailure(error, lease, permit));
     }
@@ -194,7 +200,7 @@ public class ModelGatewayOrchestrator {
             GatewayRequestContext context,
             RequestLease lease,
             ConcurrencyPermit permit,
-            ResolvedModelConfig model,
+            PreparedCall call,
             ProviderProtocol protocol,
             ProviderCall provider
     ) {
@@ -209,9 +215,9 @@ public class ModelGatewayOrchestrator {
                     return bytes;
                 })
                 .defaultIfEmpty(new byte[0])
-                .flatMap(bytes -> finalizeBuffered(context, lease, permit, model, protocol, bytes)
+                .flatMap(bytes -> finalizeBuffered(context, lease, permit, call, protocol, bytes)
                         .map(ignored -> new ModelGatewayResponse(
-                                provider.status(), responseHeaders(provider.headers(), context, model, false),
+                                provider.status(), responseHeaders(provider.headers(), context, call.model(), false),
                                 Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(bytes))
                         )));
     }
@@ -220,7 +226,7 @@ public class ModelGatewayOrchestrator {
             GatewayRequestContext context,
             RequestLease lease,
             ConcurrencyPermit permit,
-            ResolvedModelConfig model,
+            PreparedCall call,
             ProviderProtocol protocol,
             byte[] bytes
     ) {
@@ -229,14 +235,14 @@ public class ModelGatewayOrchestrator {
             usage = usageParser.parse(protocol, objectMapper.readTree(bytes));
         } catch (Exception ignored) {
         }
-        return finalizeSuccess(context, lease, permit, model, usage, "供应商成功响应缺少权威 Usage");
+        return finalizeSuccess(context, lease, permit, call, usage, "供应商成功响应缺少权威 Usage");
     }
 
     private ModelGatewayResponse streamingResponse(
             GatewayRequestContext context,
             RequestLease lease,
             ConcurrencyPermit permit,
-            ResolvedModelConfig model,
+            PreparedCall call,
             ProviderProtocol protocol,
             ProviderCall provider
     ) {
@@ -249,24 +255,24 @@ public class ModelGatewayOrchestrator {
                     tracker.finish();
                     return finalizeOnce(
                             finalized,
-                            finalizeSuccess(context, lease, permit, model, tracker.usage(),
+                            finalizeSuccess(context, lease, permit, call, tracker.usage(),
                                     "供应商流式响应缺少权威 Usage")
                     ).thenMany(Flux.empty());
                 }))
                 .onErrorResume(error -> finalizeOnce(finalized, finalizeStreamTermination(
-                                context, lease, permit, model, tracker,
+                                context, lease, permit, call, tracker,
                                 "供应商流式响应中断，计费状态待确认"
                         ))
                         .thenMany(Flux.error(error)))
                 .doOnCancel(() -> finalizeOnce(
                         finalized,
                         finalizeStreamTermination(
-                                context, lease, permit, model, tracker,
+                                context, lease, permit, call, tracker,
                                 "客户端取消流式响应，供应商计费状态待确认"
                         )
                 ).subscribe());
         return new ModelGatewayResponse(
-                provider.status(), responseHeaders(provider.headers(), context, model, true), body
+                provider.status(), responseHeaders(provider.headers(), context, call.model(), true), body
         );
     }
 
@@ -282,7 +288,7 @@ public class ModelGatewayOrchestrator {
             GatewayRequestContext context,
             RequestLease lease,
             ConcurrencyPermit permit,
-            ResolvedModelConfig model,
+            PreparedCall call,
             TokenUsage usage,
             String missingUsageReason
     ) {
@@ -290,10 +296,10 @@ public class ModelGatewayOrchestrator {
         if (usage == null || !usage.hasUsage()) {
             billingResult = recovery.pending(lease.billingRequestId(), missingUsageReason);
         } else {
-            BigDecimal billedQuota = quotaCalculator.actual(model, usage);
+            BigDecimal billedQuota = quotaCalculator.actual(call.model(), usage, call.pricing());
             SettleRequest settlement = new SettleRequest(
-                    requestIds.usageId(lease.billingRequestId(), model.pricingVersion()),
-                    model.pricingVersion(), usage.inputTokens(), usage.outputTokens(), usage.reasoningTokens(),
+                    requestIds.usageId(lease.billingRequestId(), call.model().pricingVersion()),
+                    call.model().pricingVersion(), usage.inputTokens(), usage.outputTokens(), usage.reasoningTokens(),
                     usage.cacheReadTokens(), usage.cacheWriteTokens(), billedQuota, Instant.now()
             );
             billingResult = recovery.settle(lease.billingRequestId(), settlement);
@@ -310,14 +316,14 @@ public class ModelGatewayOrchestrator {
             GatewayRequestContext context,
             RequestLease lease,
             ConcurrencyPermit permit,
-            ResolvedModelConfig model,
+            PreparedCall call,
             StreamUsageTracker tracker,
             String missingUsageReason
     ) {
         tracker.finish();
         return tracker.usage() == null
                 ? finalizePending(lease, permit, missingUsageReason)
-                : finalizeSuccess(context, lease, permit, model, tracker.usage(), missingUsageReason);
+                : finalizeSuccess(context, lease, permit, call, tracker.usage(), missingUsageReason);
     }
 
     private Mono<ModelGatewayResponse> handleBeforeResponseFailure(
@@ -404,6 +410,7 @@ public class ModelGatewayOrchestrator {
             ResolvedModelConfig model,
             ObjectNode upstreamBody,
             String credential,
+            PricingSnapshot pricing,
             BigDecimal maximumQuota
     ) {
     }

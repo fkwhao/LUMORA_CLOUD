@@ -66,6 +66,8 @@ public class SettlementService {
         ReservationEntity processing = ReservationEntity.processing(
                 UUID.randomUUID().toString(), request.requestId().trim(), request.clientRequestId().trim(),
                 request.userId(), request.modelCode().trim(), request.pricingVersion().trim(), maximumQuota,
+                request.pricingAt(), BillingAmounts.positive(request.quotaMultiplier(), "quotaMultiplier"),
+                trimToNull(request.pricingRuleName()),
                 requestedExpiry
         );
         reservationMapper.insertIdempotent(processing);
@@ -250,6 +252,9 @@ public class SettlementService {
                 || !existing.getUserId().equals(request.userId())
                 || !existing.getModelCode().equals(request.modelCode().trim())
                 || !existing.getPricingVersion().equals(request.pricingVersion().trim())
+                || !existing.getPricingAt().equals(request.pricingAt())
+                || existing.getQuotaMultiplier().compareTo(request.quotaMultiplier()) != 0
+                || !java.util.Objects.equals(existing.getPricingRuleName(), trimToNull(request.pricingRuleName()))
                 || existing.getRequestedQuota().compareTo(maximumQuota) != 0) {
             throw new ApiException(HttpStatus.CONFLICT, "RESERVATION_IDEMPOTENCY_CONFLICT",
                     "相同幂等键对应了不同预占参数");
@@ -312,7 +317,9 @@ public class SettlementService {
                 reservation.getId(), reservation.getRequestId(), reservation.getUserId(), reservation.getModelCode(),
                 reservation.getPricingVersion(),
                 ReservationStatus.valueOf(reservation.getStatus()), reservation.getRequestedQuota(),
-                reservation.getSettledQuota(), bucket.availableQuota(), reservation.getExpiresAt(), idempotentReplay
+                reservation.getSettledQuota(), bucket.availableQuota(), reservation.getPricingAt(),
+                reservation.getQuotaMultiplier(), reservation.getPricingRuleName(),
+                reservation.getExpiresAt(), idempotentReplay
         );
     }
 
@@ -354,6 +361,14 @@ public class SettlementService {
         requireText(request.clientRequestId(), "clientRequestId", 128);
         requireText(request.modelCode(), "modelCode", 128);
         requireText(request.pricingVersion(), "pricingVersion", 64);
+        if (request.pricingAt() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PRICING_AT", "pricingAt 不能为空");
+        }
+        BillingAmounts.positive(request.quotaMultiplier(), "quotaMultiplier");
+        if (request.pricingRuleName() != null && request.pricingRuleName().trim().length() > 80) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PRICING_RULE_NAME",
+                    "pricingRuleName 长度不能超过 80");
+        }
     }
 
     private void validateSettle(SettleRequest request) {
@@ -377,5 +392,9 @@ public class SettlementService {
 
     private String truncate(String value, int maxLength) {
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    private String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

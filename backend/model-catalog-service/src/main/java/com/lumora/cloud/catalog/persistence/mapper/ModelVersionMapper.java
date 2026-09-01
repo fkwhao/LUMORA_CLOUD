@@ -2,6 +2,7 @@ package com.lumora.cloud.catalog.persistence.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.lumora.cloud.catalog.persistence.entity.ModelVersionEntity;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -61,15 +62,18 @@ public interface ModelVersionMapper extends BaseMapper<ModelVersionEntity> {
                 cost_currency = #{entity.costCurrency},
                 input_cost_per_million = #{entity.inputCostPerMillion},
                 output_cost_per_million = #{entity.outputCostPerMillion},
-                reasoning_cost_per_million = #{entity.reasoningCostPerMillion},
                 cache_read_cost_per_million = #{entity.cacheReadCostPerMillion},
                 cache_write_cost_per_million = #{entity.cacheWriteCostPerMillion},
+                cost_time_pricing_enabled = #{entity.costTimePricingEnabled},
+                cost_time_pricing_zone = #{entity.costTimePricingZone},
+                quota_time_pricing_enabled = #{entity.quotaTimePricingEnabled},
+                quota_time_pricing_zone = #{entity.quotaTimePricingZone},
                 input_quota_per_million = #{entity.inputQuotaPerMillion},
                 output_quota_per_million = #{entity.outputQuotaPerMillion},
-                reasoning_quota_per_million = #{entity.reasoningQuotaPerMillion},
                 cache_read_quota_per_million = #{entity.cacheReadQuotaPerMillion},
                 cache_write_quota_per_million = #{entity.cacheWriteQuotaPerMillion},
-                minimum_request_quota = #{entity.minimumRequestQuota}, revision = revision + 1
+                minimum_request_quota = #{entity.minimumRequestQuota},
+                default_quota_multiplier = #{entity.defaultQuotaMultiplier}, revision = revision + 1
             WHERE id = #{entity.id} AND status = 'DRAFT' AND revision = #{expectedRevision}
             """)
     int updateDraftOptimistic(
@@ -93,5 +97,16 @@ public interface ModelVersionMapper extends BaseMapper<ModelVersionEntity> {
             @Param("id") String id,
             @Param("expectedRevision") long expectedRevision,
             @Param("publishedAt") Instant publishedAt
+    );
+
+    @Delete("""
+            DELETE FROM model_config_version
+            WHERE id = #{id} AND model_id = #{modelId}
+              AND status = 'DRAFT' AND revision = #{expectedRevision}
+            """)
+    int deleteDraftOptimistic(
+            @Param("id") String id,
+            @Param("modelId") Long modelId,
+            @Param("expectedRevision") long expectedRevision
     );
 }

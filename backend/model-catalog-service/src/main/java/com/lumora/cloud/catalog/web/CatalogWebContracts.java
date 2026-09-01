@@ -12,6 +12,9 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.DayOfWeek;
+import java.time.LocalTime;
+import java.util.List;
 
 public final class CatalogWebContracts {
 
@@ -77,17 +80,68 @@ public final class CatalogWebContracts {
             boolean supportsVision,
             boolean supportsJson,
             @NotBlank @Pattern(regexp = "[A-Z]{3}") String costCurrency,
-            @NotNull @DecimalMin("0") BigDecimal inputCostPerMillion,
+            @NotNull @DecimalMin("0") BigDecimal uncachedInputCostPerMillion,
+            @NotNull @DecimalMin("0") BigDecimal cachedInputCostPerMillion,
+            @DecimalMin("0") BigDecimal cacheCreationInputCostPerMillion,
             @NotNull @DecimalMin("0") BigDecimal outputCostPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal reasoningCostPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal cacheReadCostPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal cacheWriteCostPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal inputQuotaPerMillion,
+            @Valid CostTimePricingPolicyInput costTimePricingPolicy,
+            @NotNull @DecimalMin("0") BigDecimal uncachedInputQuotaPerMillion,
+            @NotNull @DecimalMin("0") BigDecimal cachedInputQuotaPerMillion,
+            @DecimalMin("0") BigDecimal cacheCreationInputQuotaPerMillion,
             @NotNull @DecimalMin("0") BigDecimal outputQuotaPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal reasoningQuotaPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal cacheReadQuotaPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal cacheWriteQuotaPerMillion,
-            @NotNull @DecimalMin("0") BigDecimal minimumRequestQuota
+            @NotNull @DecimalMin("0") BigDecimal minimumRequestQuota,
+            @Valid QuotaTimePricingPolicyInput quotaTimePricingPolicy
+    ) {
+    }
+
+    public record CostTimePricingPolicyInput(
+            @NotBlank @Size(max = 64) String zoneId,
+            @NotNull @Size(min = 1, max = 32) List<@Valid CostTimePricingRuleInput> rules
+    ) {
+        public CostTimePricingPolicyInput {
+            rules = rules == null ? null : List.copyOf(rules);
+        }
+    }
+
+    public record CostTimePricingRuleInput(
+            @NotBlank @Size(max = 80) String name,
+            @NotNull @Size(min = 1, max = 7) List<@NotNull DayOfWeek> daysOfWeek,
+            @NotNull LocalTime startTime,
+            @NotNull LocalTime endTime,
+            @NotNull @Valid CostRateInput costRates
+    ) {
+        public CostTimePricingRuleInput {
+            daysOfWeek = daysOfWeek == null ? null : List.copyOf(daysOfWeek);
+        }
+    }
+
+    public record QuotaTimePricingPolicyInput(
+            @NotBlank @Size(max = 64) String zoneId,
+            @NotNull @DecimalMin(value = "0", inclusive = false) BigDecimal defaultQuotaMultiplier,
+            @NotNull @Size(min = 1, max = 32) List<@Valid QuotaTimePricingRuleInput> rules
+    ) {
+        public QuotaTimePricingPolicyInput {
+            rules = rules == null ? null : List.copyOf(rules);
+        }
+    }
+
+    public record QuotaTimePricingRuleInput(
+            @NotBlank @Size(max = 80) String name,
+            @NotNull @Size(min = 1, max = 7) List<@NotNull DayOfWeek> daysOfWeek,
+            @NotNull LocalTime startTime,
+            @NotNull LocalTime endTime,
+            @NotNull @DecimalMin(value = "0", inclusive = false) BigDecimal quotaMultiplier
+    ) {
+        public QuotaTimePricingRuleInput {
+            daysOfWeek = daysOfWeek == null ? null : List.copyOf(daysOfWeek);
+        }
+    }
+
+    public record CostRateInput(
+            @NotNull @DecimalMin("0") BigDecimal uncachedInputPerMillion,
+            @NotNull @DecimalMin("0") BigDecimal cachedInputPerMillion,
+            @DecimalMin("0") BigDecimal cacheCreationInputPerMillion,
+            @NotNull @DecimalMin("0") BigDecimal outputPerMillion
     ) {
     }
 
@@ -130,7 +184,9 @@ public final class CatalogWebContracts {
             ModelCapabilities capabilities,
             String costCurrency,
             CostRates costRates,
+            CostTimePricingPolicy costTimePricingPolicy,
             QuotaRates quotaRates,
+            QuotaTimePricingPolicy quotaTimePricingPolicy,
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt
@@ -138,12 +194,54 @@ public final class CatalogWebContracts {
     }
 
     public record CostRates(
-            BigDecimal inputPerMillion,
-            BigDecimal outputPerMillion,
-            BigDecimal reasoningPerMillion,
-            BigDecimal cacheReadPerMillion,
-            BigDecimal cacheWritePerMillion
+            BigDecimal uncachedInputPerMillion,
+            BigDecimal cachedInputPerMillion,
+            BigDecimal cacheCreationInputPerMillion,
+            BigDecimal outputPerMillion
     ) {
+    }
+
+    public record CostTimePricingPolicy(
+            String zoneId,
+            List<CostTimePricingRule> rules
+    ) {
+        public CostTimePricingPolicy {
+            rules = List.copyOf(rules);
+        }
+    }
+
+    public record CostTimePricingRule(
+            String name,
+            List<DayOfWeek> daysOfWeek,
+            LocalTime startTime,
+            LocalTime endTime,
+            CostRates costRates
+    ) {
+        public CostTimePricingRule {
+            daysOfWeek = List.copyOf(daysOfWeek);
+        }
+    }
+
+    public record QuotaTimePricingPolicy(
+            String zoneId,
+            BigDecimal defaultQuotaMultiplier,
+            List<QuotaTimePricingRule> rules
+    ) {
+        public QuotaTimePricingPolicy {
+            rules = List.copyOf(rules);
+        }
+    }
+
+    public record QuotaTimePricingRule(
+            String name,
+            List<DayOfWeek> daysOfWeek,
+            LocalTime startTime,
+            LocalTime endTime,
+            BigDecimal quotaMultiplier
+    ) {
+        public QuotaTimePricingRule {
+            daysOfWeek = List.copyOf(daysOfWeek);
+        }
     }
 
     public record AdminModelResponse(
@@ -166,6 +264,7 @@ public final class CatalogWebContracts {
             String providerCode,
             ModelCapabilities capabilities,
             QuotaRates quotaRates,
+            QuotaTimePricingPolicy quotaTimePricingPolicy,
             Instant publishedAt
     ) {
     }

@@ -29,6 +29,9 @@ public final class BillingContracts {
             String modelCode,
             String pricingVersion,
             BigDecimal maximumQuota,
+            Instant pricingAt,
+            BigDecimal quotaMultiplier,
+            String pricingRuleName,
             Instant expiresAt
     ) {
     }
@@ -62,6 +65,9 @@ public final class BillingContracts {
             BigDecimal reservedQuota,
             BigDecimal settledQuota,
             BigDecimal remainingQuota,
+            Instant pricingAt,
+            BigDecimal quotaMultiplier,
+            String pricingRuleName,
             Instant expiresAt,
             boolean idempotentReplay
     ) {

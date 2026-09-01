@@ -15,10 +15,10 @@ public interface ReservationMapper extends BaseMapper<ReservationEntity> {
     @Insert("""
             INSERT INTO billing_reservation (
                 id, request_id, client_request_id, user_id, model_code, pricing_version,
-                requested_quota, status, expires_at
+                pricing_at, quota_multiplier, pricing_rule_name, requested_quota, status, expires_at
             ) VALUES (
                 #{id}, #{requestId}, #{clientRequestId}, #{userId}, #{modelCode}, #{pricingVersion},
-                #{requestedQuota}, #{status}, #{expiresAt}
+                #{pricingAt}, #{quotaMultiplier}, #{pricingRuleName}, #{requestedQuota}, #{status}, #{expiresAt}
             )
             ON DUPLICATE KEY UPDATE id = id
             """)

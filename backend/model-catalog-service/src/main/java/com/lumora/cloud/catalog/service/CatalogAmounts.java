@@ -25,4 +25,17 @@ final class CatalogAmounts {
                     field + " 最多支持 6 位小数");
         }
     }
+
+    static BigDecimal optionalNonNegative(BigDecimal value, String field) {
+        return value == null ? BigDecimal.ZERO.setScale(SCALE) : nonNegative(value, field);
+    }
+
+    static BigDecimal positive(BigDecimal value, String field) {
+        BigDecimal normalized = nonNegative(value, field);
+        if (normalized.signum() == 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CATALOG_AMOUNT",
+                    field + " 必须大于 0");
+        }
+        return normalized;
+    }
 }

@@ -1,6 +1,7 @@
 package com.lumora.cloud.modelgateway.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lumora.cloud.api.catalog.CatalogContracts.CostRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
@@ -119,7 +120,8 @@ class ChatRequestValidatorTest {
                 "lumora-gpt", "Lumora GPT", null, "pricing-v1", "provider", protocol,
                 "https://api.example.com/v1", "TEST_KEY", "provider-model",
                 new ModelCapabilities(8_192, 512, reasoning, tools, vision, json),
-                new QuotaRates(one, one, one, one, one, one), Instant.now()
+                "USD", new CostRates(one, one, one, one), null,
+                new QuotaRates(one, one, one, one, one), null, Instant.now()
         );
     }
 }
