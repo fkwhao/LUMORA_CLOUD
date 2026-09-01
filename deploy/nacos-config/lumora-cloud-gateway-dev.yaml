@@ -24,7 +24,7 @@ spring:
             - id: lumora-model-gateway-service
               uri: lb://lumora-model-gateway-service
               predicates:
-                - Path=/api/app/model/**
+                - Path=/api/app/model/**,/api/admin/model-gateway/**
 
 logging:
   level:

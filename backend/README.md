@@ -16,23 +16,26 @@ backend/
 当前已经完成 User Service 的注册、登录、Refresh Token 轮换、退出、用户信息、角色与审计，以及
 Gateway 的 JWT 校验、会话撤销检查和可信身份头注入。Billing Service 已完成套餐及版本、管理员
 发放订阅、购买订单、开发环境测试支付、购买后订阅发放/顺延、七天额度桶、额度预占/结算/释放、
-超额待对账、过期预占自动释放、用量记录和不可变账本。
+超额待对账、过期预占自动释放、用量记录和不可变账本，并已加入多币种钱包、充值订单与不可变余额流水。
 Model Catalog Service 也已完成供应商管理、模型草稿、发布版本、启停、用户可见目录与内部解析接口。
 Model Gateway 已完成 Chat Completions、OpenAI Responses 与 Anthropic Messages 调用闭环，支持
-普通 JSON 与 SSE、分布式并发限制、请求幂等、额度预占、权威 Usage 结算以及失败补偿。钱包与真实
-第三方支付渠道留在后续迭代。
+普通 JSON 与 SSE、分布式并发限制、请求幂等、额度预占、权威 Usage 结算、失败补偿和 Redis 脱敏诊断。
+钱包套餐支付已经完成，真实第三方支付渠道留在后续迭代。
 
 Billing 对外接口按权限分为：
 
 - `/api/app/billing/plans|overview|history`：已登录用户及 Desktop 的套餐、额度与历史查询。
-- `/api/app/billing/orders/**`：网页用户控制台幂等创建订单、查询/取消订单和开发环境测试支付。
+- `/api/app/billing/orders/**`：网页用户控制台幂等创建订单、查询/取消订单、钱包支付和开发环境测试支付。
+- `/api/app/billing/wallet/**`：查询余额/流水、创建充值订单、MOCK 到账和取消充值订单。
 - `/api/app/billing/payment-capabilities`：返回当前环境实际启用的支付方式；生产环境不得启用 `MOCK`。
 - `/api/admin/billing/plans/**`：管理员创建套餐、发布新的价格/周额度版本并查看历史版本。
 - `/api/admin/billing/subscriptions`、`/subscriptions/grant`：查询最近订阅并使用幂等引用发放套餐。
 - `/api/admin/billing/orders`：管理员只读查看最近 100 条购买订单。
 - `/api/admin/billing/statistics`：精确统计有效订阅、待支付订单、本月分币种收入和今日权威 Usage。
-- `/api/admin/users?query=`：按邮箱前缀或显示名称查找发放目标，不跨服务复制用户数据。
+- `/api/admin/billing/wallets/**`：查询用户钱包并使用幂等调整单执行带原因的余额增减。
+- `/api/admin/users/**`：查询用户、维护角色/状态和撤销会话，不跨服务复制用户数据。
 - `/api/admin/users/statistics`：精确统计用户状态、本月新增用户和未过期活跃会话。
+- `/api/admin/model-gateway/diagnostics`：读取 Redis 中有限保留期的脱敏网关运行诊断。
 - `/internal/billing/reservations/**`：只允许 Model Gateway 使用内部服务凭据调用的预占、结算、释放
   与待对账接口；公共 DTO 与 Feign Client 位于 `cloud-api`。
 
@@ -91,8 +94,15 @@ Billing 的周额度周期从订阅生效时刻开始连续计算，每七天一
 购买订单使用 `(user_id, idempotency_key)` 唯一约束避免网络重试重复下单，并在下单时冻结套餐版本、
 名称、金额和币种。支付确认锁定订单行，在同一事务内记录支付尝试、创建一次 `PURCHASE` 订阅并把订单
 推进到 `FULFILLED`；同一用户并发续费由 Billing Account 行锁串行化，后续订阅从现有最晚结束时间开始。
-待支付订单默认 30 分钟过期。当前 `MOCK` 方式只供本地联调，真实渠道后续通过支付适配器与服务端回调
+待支付订单默认 30 分钟过期。钱包支付在同一事务内完成条件扣款、余额流水、支付记录、订阅发放和订单完成。
+当前 `MOCK` 方式只供本地联调，真实渠道后续通过支付适配器与服务端回调
 复用同一确认状态机，不能由浏览器直接声明支付成功。
+
+订单事务提交后，Billing Service 会向 RabbitMQ 持久化延迟队列发送一条带剩余 TTL 的过期消息；消息
+到期后通过死信交换机进入消费队列，消费者只对“仍为待支付且确已到期”的订单执行条件更新。消费失败
+由 Spring AMQP 最多重试 3 次，重试耗尽后进入 `lumora.billing.order.expiry.failed.q`，供人工检查和补偿。
+原有 MySQL 定时扫描继续保留为权威兜底，因此 RabbitMQ 临时不可用或消息丢失不会留下永久待支付订单，
+重复消息也不会把已支付或已取消订单改成过期状态。充值订单采用相同的 RabbitMQ 及时触发与 MySQL 扫描兜底策略。
 
 管理端运营统计继续遵循数据所有权：User、Billing 与 Model Catalog 分别聚合自己的 MySQL 数据，前端
 并行读取并处理局部失败，不增加跨库查询。日/月统计边界统一采用 `Asia/Shanghai`；订单收入按币种

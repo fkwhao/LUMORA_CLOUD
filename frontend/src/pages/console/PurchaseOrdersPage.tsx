@@ -15,6 +15,7 @@ import { ApiClientError } from "../../api/auth";
 import {
   cancelPurchaseOrder,
   completeMockPayment,
+  completeWalletPayment,
   getPaymentCapabilities,
   getPurchaseOrder,
   listPurchaseOrders,
@@ -107,7 +108,7 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [capabilities, setCapabilities] = useState<PaymentCapabilities | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"pay" | "cancel" | null>(null);
+  const [pending, setPending] = useState<"mock" | "wallet" | "cancel" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -131,11 +132,13 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
     void load();
   }, [orderNo]);
 
-  async function pay() {
-    setPending("pay");
+  async function pay(method: "mock" | "wallet") {
+    setPending(method);
     setError(null);
     try {
-      setOrder(await completeMockPayment(orderNo));
+      setOrder(method === "wallet"
+        ? await completeWalletPayment(orderNo)
+        : await completeMockPayment(orderNo));
     } catch (reason) {
       setError(message(reason));
     } finally {
@@ -162,6 +165,7 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
   }
 
   const mockAvailable = order.mockPaymentEnabled && capabilities?.availableMethods.includes("MOCK");
+  const walletAvailable = capabilities?.availableMethods.includes("WALLET");
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -188,6 +192,7 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
             <OrderField label="创建时间" value={formatDate(order.createdAt)} />
             <OrderField label="支付截止时间" value={formatDate(order.expiresAt)} />
             {order.paidAt && <OrderField label="支付完成时间" value={formatDate(order.paidAt)} />}
+            {order.paymentProvider && <OrderField label="支付方式" value={order.paymentProvider === "WALLET" ? "钱包余额" : "开发环境 MOCK"} />}
             {order.subscriptionId && <OrderField label="订阅编号" value={order.subscriptionId} />}
           </dl>
 
@@ -202,7 +207,8 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
               )}
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button isDisabled={pending !== null} onPress={() => void cancel()} variant="tertiary"><XCircle size={16} /> {pending === "cancel" ? "正在取消…" : "取消订单"}</Button>
-                {mockAvailable && <Button isDisabled={pending !== null} onPress={() => void pay()} variant="primary"><CreditCard size={16} /> {pending === "pay" ? "正在确认…" : "使用测试支付"}</Button>}
+                {mockAvailable && <Button isDisabled={pending !== null} onPress={() => void pay("mock")} variant="secondary"><ShieldAlert size={16} /> {pending === "mock" ? "正在确认…" : "使用测试支付"}</Button>}
+                {walletAvailable && <Button isDisabled={pending !== null} onPress={() => void pay("wallet")} variant="primary"><CreditCard size={16} /> {pending === "wallet" ? "正在扣款…" : "钱包余额支付"}</Button>}
               </div>
             </>
           )}

@@ -58,6 +58,12 @@ public class UserSessionEntity {
     public Long getUserId() { return userId; }
     public String getClientType() { return clientType; }
     public String getDeviceId() { return deviceId; }
+    public String getDeviceName() { return deviceName; }
+    public String getIpAddress() { return ipAddress; }
+    public String getUserAgent() { return userAgent; }
     public String getStatus() { return status; }
     public Instant getExpiresAt() { return expiresAt; }
+    public Instant getLastSeenAt() { return lastSeenAt; }
+    public Instant getRevokedAt() { return revokedAt; }
+    public Instant getCreatedAt() { return createdAt; }
 }

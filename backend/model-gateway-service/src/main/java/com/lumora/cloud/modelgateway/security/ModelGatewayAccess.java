@@ -24,15 +24,7 @@ public class ModelGatewayAccess {
     }
 
     public GatewayRequestContext requireUser(HttpHeaders headers) {
-        String providedToken = headers.getFirst(AuthHeaders.INTERNAL_TOKEN);
-        String serviceId = headers.getFirst(AuthHeaders.SERVICE_ID);
-        boolean trusted = providedToken != null && MessageDigest.isEqual(
-                internalToken,
-                providedToken.getBytes(StandardCharsets.UTF_8)
-        );
-        if (!trusted || !CLOUD_GATEWAY.equals(serviceId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "TRUSTED_GATEWAY_REQUIRED", "请求未经过可信云端网关");
-        }
+        requireTrustedGateway(headers);
         long userId = positiveLong(headers.getFirst(AuthHeaders.USER_ID));
         String sessionId = required(headers, AuthHeaders.SESSION_ID, "AUTHENTICATION_REQUIRED", "请先登录");
         String traceId = required(headers, AuthHeaders.REQUEST_ID, "REQUEST_ID_REQUIRED", "请求缺少追踪标识");
@@ -52,6 +44,30 @@ public class ModelGatewayAccess {
                 traceId,
                 clientRequestId
         );
+    }
+
+    public void requireAdmin(HttpHeaders headers) {
+        requireTrustedGateway(headers);
+        positiveLong(headers.getFirst(AuthHeaders.USER_ID));
+        String roles = value(headers, AuthHeaders.ROLES);
+        boolean admin = java.util.Arrays.stream(roles.split(","))
+                .map(String::trim)
+                .anyMatch("ADMIN"::equals);
+        if (!admin) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ADMIN_REQUIRED", "需要管理员权限");
+        }
+    }
+
+    private void requireTrustedGateway(HttpHeaders headers) {
+        String providedToken = headers.getFirst(AuthHeaders.INTERNAL_TOKEN);
+        String serviceId = headers.getFirst(AuthHeaders.SERVICE_ID);
+        boolean trusted = providedToken != null && MessageDigest.isEqual(
+                internalToken,
+                providedToken.getBytes(StandardCharsets.UTF_8)
+        );
+        if (!trusted || !CLOUD_GATEWAY.equals(serviceId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "TRUSTED_GATEWAY_REQUIRED", "请求未经过可信云端网关");
+        }
     }
 
     private long positiveLong(String value) {

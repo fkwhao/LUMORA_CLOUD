@@ -34,6 +34,10 @@ lumora:
       retention: P7D
       scan-interval: PT10S
       batch-size: 100
+    diagnostics:
+      retention: P7D
+      summary-window: PT24H
+      max-records: 1000
 
 logging:
   level:

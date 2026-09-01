@@ -5,12 +5,16 @@ import com.lumora.cloud.billing.service.BillingCatalogService;
 import com.lumora.cloud.billing.service.BillingHistoryService;
 import com.lumora.cloud.billing.service.SubscriptionService;
 import com.lumora.cloud.billing.service.PurchaseOrderService;
+import com.lumora.cloud.billing.service.WalletService;
 import com.lumora.cloud.billing.web.BillingWebContracts.BillingHistoryResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.BillingOverviewResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.PlanResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.CreatePurchaseOrderRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.PaymentCapabilitiesResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.PurchaseOrderResponse;
+import com.lumora.cloud.billing.web.BillingWebContracts.CreateWalletTopupRequest;
+import com.lumora.cloud.billing.web.BillingWebContracts.WalletOverviewResponse;
+import com.lumora.cloud.billing.web.BillingWebContracts.WalletTopupOrderResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -38,19 +42,22 @@ public class BillingAppController {
     private final SubscriptionService subscriptionService;
     private final BillingHistoryService historyService;
     private final PurchaseOrderService orderService;
+    private final WalletService walletService;
 
     public BillingAppController(
             BillingAccess access,
             BillingCatalogService catalogService,
             SubscriptionService subscriptionService,
             BillingHistoryService historyService,
-            PurchaseOrderService orderService
+            PurchaseOrderService orderService,
+            WalletService walletService
     ) {
         this.access = access;
         this.catalogService = catalogService;
         this.subscriptionService = subscriptionService;
         this.historyService = historyService;
         this.orderService = orderService;
+        this.walletService = walletService;
     }
 
     @GetMapping("/plans")
@@ -101,6 +108,41 @@ public class BillingAppController {
             @PathVariable @Pattern(regexp = "LU[A-Z0-9]{20,38}") String orderNo
     ) {
         return orderService.mockPay(access.requireUserId(), orderNo);
+    }
+
+    @PostMapping("/orders/{orderNo}/payments/wallet")
+    public PurchaseOrderResponse walletPay(
+            @PathVariable @Pattern(regexp = "LU[A-Z0-9]{20,38}") String orderNo
+    ) {
+        return orderService.walletPay(access.requireUserId(), orderNo);
+    }
+
+    @GetMapping("/wallet")
+    public WalletOverviewResponse wallet() {
+        return walletService.overview(access.requireUserId());
+    }
+
+    @PostMapping("/wallet/topups")
+    @ResponseStatus(HttpStatus.CREATED)
+    public WalletTopupOrderResponse createTopup(
+            @RequestHeader("Idempotency-Key") @NotBlank @Size(max = 128) String idempotencyKey,
+            @Valid @RequestBody CreateWalletTopupRequest request
+    ) {
+        return walletService.createTopup(access.requireUserId(), idempotencyKey, request);
+    }
+
+    @PostMapping("/wallet/topups/{orderNo}/payments/mock")
+    public WalletTopupOrderResponse mockPayTopup(
+            @PathVariable @Pattern(regexp = "WU[A-Z0-9]{20,38}") String orderNo
+    ) {
+        return walletService.mockPayTopup(access.requireUserId(), orderNo);
+    }
+
+    @PostMapping("/wallet/topups/{orderNo}/cancel")
+    public WalletTopupOrderResponse cancelTopup(
+            @PathVariable @Pattern(regexp = "WU[A-Z0-9]{20,38}") String orderNo
+    ) {
+        return walletService.cancelTopup(access.requireUserId(), orderNo);
     }
 
     @PostMapping("/orders/{orderNo}/cancel")

@@ -3,6 +3,8 @@ package com.lumora.cloud.modelgateway.web;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.lumora.cloud.api.catalog.ProviderProtocol;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
+import com.lumora.cloud.modelgateway.diagnostics.GatewayDiagnosticsStore;
+import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.security.ModelGatewayAccess;
 import com.lumora.cloud.modelgateway.service.ModelGatewayOrchestrator;
 import org.springframework.http.MediaType;
@@ -15,16 +17,24 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 @RestController
 @RequestMapping("/api/app/model/v1")
 public class ModelGatewayController {
 
     private final ModelGatewayAccess access;
     private final ModelGatewayOrchestrator orchestrator;
+    private final GatewayDiagnosticsStore diagnostics;
 
-    public ModelGatewayController(ModelGatewayAccess access, ModelGatewayOrchestrator orchestrator) {
+    public ModelGatewayController(
+            ModelGatewayAccess access,
+            ModelGatewayOrchestrator orchestrator,
+            GatewayDiagnosticsStore diagnostics
+    ) {
         this.access = access;
         this.orchestrator = orchestrator;
+        this.diagnostics = diagnostics;
     }
 
     @PostMapping(value = "/chat/completions", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -62,9 +72,51 @@ public class ModelGatewayController {
                         "INVALID_REQUEST_BODY",
                         "请求体不能为空"
                 )))
-                .flatMap(request -> orchestrator.invoke(context, request, protocol))
-                .map(response -> ResponseEntity.status(response.status())
-                        .headers(response.headers())
-                        .body(response.body()));
+                .flatMap(request -> {
+                    String modelCode = request.path("model").asText("");
+                    boolean stream = request.path("stream").asBoolean(false);
+                    return diagnostics.started(context, modelCode, protocol.name(), stream)
+                            .then(orchestrator.invoke(context, request, protocol))
+                            .map(response -> {
+                                String providerCode = response.headers().getFirst("X-Lumora-Provider-Code");
+                                AtomicBoolean completed = new AtomicBoolean();
+                                Flux<org.springframework.core.io.buffer.DataBuffer> tracked = response.body()
+                                        .doOnComplete(() -> completeOnce(
+                                                completed,
+                                                diagnostics.succeeded(
+                                                        context.traceId(), providerCode, response.status().value()
+                                                )
+                                        ))
+                                        .doOnError(error -> completeOnce(
+                                                completed,
+                                                diagnostics.failed(
+                                                        context.traceId(), providerCode,
+                                                        response.status().value(), errorCode(error)
+                                                )
+                                        ))
+                                        .doOnCancel(() -> completeOnce(
+                                                completed, diagnostics.canceled(context.traceId(), providerCode)
+                                        ));
+                                return ResponseEntity.status(response.status())
+                                        .headers(response.headers())
+                                        .body(tracked);
+                            })
+                            .onErrorResume(error -> diagnostics.failed(
+                                            context.traceId(), "", null, errorCode(error)
+                                    )
+                                    .then(Mono.error(error)));
+                });
+    }
+
+    private void completeOnce(AtomicBoolean completed, Mono<Void> operation) {
+        if (completed.compareAndSet(false, true)) {
+            operation.subscribe();
+        }
+    }
+
+    private String errorCode(Throwable error) {
+        return error instanceof ApiException apiException
+                ? apiException.getCode()
+                : error.getClass().getSimpleName();
     }
 }

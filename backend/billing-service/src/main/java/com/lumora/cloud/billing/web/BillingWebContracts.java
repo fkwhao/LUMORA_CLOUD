@@ -2,6 +2,7 @@ package com.lumora.cloud.billing.web;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -141,6 +142,7 @@ public final class BillingWebContracts {
             long amountMinor,
             String currency,
             String status,
+            String paymentProvider,
             Instant expiresAt,
             Instant paidAt,
             Instant fulfilledAt,
@@ -148,6 +150,78 @@ public final class BillingWebContracts {
             boolean mockPaymentEnabled,
             Instant createdAt,
             Instant updatedAt
+    ) {
+    }
+
+    public record CreateWalletTopupRequest(
+            @Min(1) @Max(1_000_000_000L) long amountMinor,
+            @NotBlank @Pattern(regexp = "[A-Z]{3}") String currency
+    ) {
+    }
+
+    public record WalletAccountResponse(
+            Long accountId,
+            Long userId,
+            String currency,
+            long availableMinor,
+            long version,
+            Instant updatedAt
+    ) {
+    }
+
+    public record WalletTopupOrderResponse(
+            String orderNo,
+            Long userId,
+            long amountMinor,
+            String currency,
+            String status,
+            Instant expiresAt,
+            Instant paidAt,
+            boolean mockPaymentEnabled,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+    }
+
+    public record WalletLedgerEntryResponse(
+            String id,
+            Long userId,
+            String currency,
+            String entryType,
+            String referenceType,
+            String referenceId,
+            long amountDelta,
+            long balanceAfter,
+            String description,
+            Long actorUserId,
+            Instant createdAt
+    ) {
+    }
+
+    public record WalletOverviewResponse(
+            Long userId,
+            List<WalletAccountResponse> accounts,
+            List<WalletTopupOrderResponse> topupOrders,
+            List<WalletLedgerEntryResponse> ledger
+    ) {
+        public WalletOverviewResponse {
+            accounts = List.copyOf(accounts);
+            topupOrders = List.copyOf(topupOrders);
+            ledger = List.copyOf(ledger);
+        }
+    }
+
+    public record AdminWalletAdjustmentRequest(
+            @NotNull @Min(1) Long userId,
+            @NotNull Long amountDelta,
+            @NotBlank @Pattern(regexp = "[A-Z]{3}") String currency,
+            @NotBlank @Size(max = 500) String reason
+    ) {
+    }
+
+    public record WalletAdjustmentResponse(
+            WalletAccountResponse account,
+            WalletLedgerEntryResponse ledgerEntry
     ) {
     }
 

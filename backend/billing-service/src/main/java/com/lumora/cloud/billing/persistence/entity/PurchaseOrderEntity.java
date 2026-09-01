@@ -20,6 +20,7 @@ public class PurchaseOrderEntity {
     private Long amountMinor;
     private String currency;
     private String status;
+    private String paymentProvider;
     private String idempotencyKey;
     private Instant expiresAt;
     private Instant paidAt;
@@ -67,6 +68,7 @@ public class PurchaseOrderEntity {
     public Long getAmountMinor() { return amountMinor; }
     public String getCurrency() { return currency; }
     public String getStatus() { return status; }
+    public String getPaymentProvider() { return paymentProvider; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getPaidAt() { return paidAt; }

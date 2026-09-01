@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lumora.cloud.billing.config.PaymentProperties;
 import com.lumora.cloud.billing.domain.BillingTypes.PurchaseOrderStatus;
 import com.lumora.cloud.billing.error.ApiException;
+import com.lumora.cloud.billing.messaging.OrderExpiryScheduledEvent;
 import com.lumora.cloud.billing.persistence.entity.PaymentAttemptEntity;
 import com.lumora.cloud.billing.persistence.entity.PurchaseOrderEntity;
 import com.lumora.cloud.billing.persistence.mapper.PaymentAttemptMapper;
@@ -14,6 +15,7 @@ import com.lumora.cloud.billing.web.BillingWebContracts.PlanResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.PurchaseOrderResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.SubscriptionResponse;
 import org.springframework.http.HttpStatus;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,20 +36,26 @@ public class PurchaseOrderService {
     private final PaymentAttemptMapper paymentMapper;
     private final BillingCatalogService catalogService;
     private final SubscriptionService subscriptionService;
+    private final WalletService walletService;
     private final PaymentProperties properties;
+    private final ApplicationEventPublisher events;
 
     public PurchaseOrderService(
             PurchaseOrderMapper orderMapper,
             PaymentAttemptMapper paymentMapper,
             BillingCatalogService catalogService,
             SubscriptionService subscriptionService,
-            PaymentProperties properties
+            WalletService walletService,
+            PaymentProperties properties,
+            ApplicationEventPublisher events
     ) {
         this.orderMapper = orderMapper;
         this.paymentMapper = paymentMapper;
         this.catalogService = catalogService;
         this.subscriptionService = subscriptionService;
+        this.walletService = walletService;
         this.properties = properties;
+        this.events = events;
     }
 
     @Transactional
@@ -73,6 +81,9 @@ public class PurchaseOrderService {
             throw new IllegalStateException("Purchase order was not created");
         }
         ensureSamePlan(persisted, request.planVersionId());
+        if (PurchaseOrderStatus.PENDING_PAYMENT.name().equals(persisted.getStatus())) {
+            events.publishEvent(new OrderExpiryScheduledEvent(persisted.getOrderNo(), persisted.getExpiresAt()));
+        }
         return response(persisted);
     }
 
@@ -99,7 +110,33 @@ public class PurchaseOrderService {
         SubscriptionResponse subscription = subscriptionService.purchase(
                 userId, order.getPlanVersionId(), order.getOrderNo(), now
         );
-        if (orderMapper.markFulfilled(order.getId(), now, subscription.subscriptionId()) != 1) {
+        if (orderMapper.markFulfilled(order.getId(), now, subscription.subscriptionId(), "MOCK") != 1) {
+            throw new ApiException(HttpStatus.CONFLICT, "ORDER_STATE_CONFLICT", "订单状态已被其他操作修改");
+        }
+        return response(orderMapper.selectById(order.getId()));
+    }
+
+    @Transactional
+    public PurchaseOrderResponse walletPay(Long userId, String orderNo) {
+        PurchaseOrderEntity order = requireForUpdate(orderNo, userId);
+        if (!PurchaseOrderStatus.PENDING_PAYMENT.name().equals(order.getStatus())) {
+            return response(order);
+        }
+        Instant now = Instant.now();
+        if (!order.getExpiresAt().isAfter(now)) {
+            orderMapper.markExpired(order.getId());
+            return response(orderMapper.selectById(order.getId()));
+        }
+
+        walletService.debitPurchase(userId, order.getCurrency(), order.getAmountMinor(), order.getOrderNo());
+        paymentMapper.insert(PaymentAttemptEntity.walletSuccess(
+                UUID.randomUUID().toString(), order.getId(), "wallet:" + order.getOrderNo(),
+                order.getAmountMinor(), order.getCurrency(), now
+        ));
+        SubscriptionResponse subscription = subscriptionService.purchase(
+                userId, order.getPlanVersionId(), order.getOrderNo(), now
+        );
+        if (orderMapper.markFulfilled(order.getId(), now, subscription.subscriptionId(), "WALLET") != 1) {
             throw new ApiException(HttpStatus.CONFLICT, "ORDER_STATE_CONFLICT", "订单状态已被其他操作修改");
         }
         return response(orderMapper.selectById(order.getId()));
@@ -117,6 +154,11 @@ public class PurchaseOrderService {
             orderMapper.markCanceled(order.getId());
         }
         return response(orderMapper.selectById(order.getId()));
+    }
+
+    @Transactional
+    public boolean expirePending(String orderNo, Instant now) {
+        return orderMapper.expirePendingOrder(orderNo, now) == 1;
     }
 
     @Transactional
@@ -153,7 +195,9 @@ public class PurchaseOrderService {
     }
 
     public PaymentCapabilitiesResponse capabilities() {
-        return new PaymentCapabilitiesResponse(properties.mockEnabled() ? List.of("MOCK") : List.of());
+        return new PaymentCapabilitiesResponse(
+                properties.mockEnabled() ? List.of("WALLET", "MOCK") : List.of("WALLET")
+        );
     }
 
     private PurchaseOrderEntity requireForUpdate(String orderNo, Long userId) {
@@ -179,7 +223,7 @@ public class PurchaseOrderService {
         return new PurchaseOrderResponse(
                 order.getOrderNo(), order.getUserId(), order.getPlanVersionId(),
                 order.getPlanCode(), order.getPlanName(), order.getAmountMinor(), order.getCurrency(),
-                order.getStatus(), order.getExpiresAt(), order.getPaidAt(), order.getFulfilledAt(),
+                order.getStatus(), order.getPaymentProvider(), order.getExpiresAt(), order.getPaidAt(), order.getFulfilledAt(),
                 order.getSubscriptionId(), properties.mockEnabled(), order.getCreatedAt(), order.getUpdatedAt()
         );
     }

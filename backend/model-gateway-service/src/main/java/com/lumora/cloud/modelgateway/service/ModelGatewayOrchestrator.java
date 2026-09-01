@@ -402,6 +402,7 @@ public class ModelGatewayOrchestrator {
         }
         headers.set(AuthHeaders.REQUEST_ID, context.traceId());
         headers.set("X-Lumora-Pricing-Version", model.pricingVersion());
+        headers.set("X-Lumora-Provider-Code", model.providerCode());
         headers.setCacheControl("no-store");
         return headers;
     }

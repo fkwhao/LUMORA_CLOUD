@@ -26,4 +26,12 @@ public interface RefreshTokenMapper extends BaseMapper<RefreshTokenEntity> {
             WHERE session_id = #{sessionId} AND status = 'ACTIVE'
             """)
     int revokeActiveBySessionId(@Param("sessionId") String sessionId, @Param("revokedAt") Instant revokedAt);
+
+    @Update("""
+            UPDATE refresh_token rt
+            JOIN user_session us ON us.id = rt.session_id
+            SET rt.status = 'REVOKED', rt.revoked_at = #{revokedAt}
+            WHERE us.user_id = #{userId} AND rt.status = 'ACTIVE'
+            """)
+    int revokeActiveByUserId(@Param("userId") Long userId, @Param("revokedAt") Instant revokedAt);
 }

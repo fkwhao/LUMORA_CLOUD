@@ -106,6 +106,7 @@ export interface PurchaseOrder {
   amountMinor: number;
   currency: string;
   status: "PENDING_PAYMENT" | "FULFILLED" | "CANCELED" | "EXPIRED";
+  paymentProvider?: "MOCK" | "WALLET";
   expiresAt: string;
   paidAt?: string;
   fulfilledAt?: string;
@@ -116,7 +117,55 @@ export interface PurchaseOrder {
 }
 
 export interface PaymentCapabilities {
-  availableMethods: Array<"MOCK">;
+  availableMethods: Array<"MOCK" | "WALLET">;
+}
+
+export interface WalletAccount {
+  accountId: number;
+  userId: number;
+  currency: string;
+  availableMinor: number;
+  version: number;
+  updatedAt?: string;
+}
+
+export interface WalletTopupOrder {
+  orderNo: string;
+  userId: number;
+  amountMinor: number;
+  currency: string;
+  status: "PENDING_PAYMENT" | "PAID" | "CANCELED" | "EXPIRED";
+  expiresAt: string;
+  paidAt?: string;
+  mockPaymentEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WalletLedgerEntry {
+  id: string;
+  userId: number;
+  currency: string;
+  entryType: "TOPUP" | "PURCHASE" | "ADMIN_ADJUSTMENT";
+  referenceType: string;
+  referenceId: string;
+  amountDelta: number;
+  balanceAfter: number;
+  description?: string;
+  actorUserId?: number;
+  createdAt: string;
+}
+
+export interface WalletOverview {
+  userId: number;
+  accounts: WalletAccount[];
+  topupOrders: WalletTopupOrder[];
+  ledger: WalletLedgerEntry[];
+}
+
+export interface WalletAdjustment {
+  account: WalletAccount;
+  ledgerEntry: WalletLedgerEntry;
 }
 
 export interface CurrencyRevenue {
@@ -177,6 +226,12 @@ export function completeMockPayment(orderNo: string): Promise<PurchaseOrder> {
   });
 }
 
+export function completeWalletPayment(orderNo: string): Promise<PurchaseOrder> {
+  return apiFetch<PurchaseOrder>(`/api/app/billing/orders/${encodeURIComponent(orderNo)}/payments/wallet`, {
+    method: "POST",
+  });
+}
+
 export function cancelPurchaseOrder(orderNo: string): Promise<PurchaseOrder> {
   return apiFetch<PurchaseOrder>(`/api/app/billing/orders/${encodeURIComponent(orderNo)}/cancel`, {
     method: "POST",
@@ -229,4 +284,45 @@ export function listAdminOrders(): Promise<PurchaseOrder[]> {
 
 export function getBillingStatistics(): Promise<BillingStatistics> {
   return apiFetch<BillingStatistics>("/api/admin/billing/statistics");
+}
+
+export function getWalletOverview(): Promise<WalletOverview> {
+  return apiFetch<WalletOverview>("/api/app/billing/wallet");
+}
+
+export function createWalletTopup(amountMinor: number, currency: string, idempotencyKey: string): Promise<WalletTopupOrder> {
+  return apiFetch<WalletTopupOrder>("/api/app/billing/wallet/topups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ amountMinor, currency }),
+  });
+}
+
+export function completeMockTopup(orderNo: string): Promise<WalletTopupOrder> {
+  return apiFetch<WalletTopupOrder>(`/api/app/billing/wallet/topups/${encodeURIComponent(orderNo)}/payments/mock`, {
+    method: "POST",
+  });
+}
+
+export function cancelWalletTopup(orderNo: string): Promise<WalletTopupOrder> {
+  return apiFetch<WalletTopupOrder>(`/api/app/billing/wallet/topups/${encodeURIComponent(orderNo)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function getAdminWallet(userId: number): Promise<WalletOverview> {
+  return apiFetch<WalletOverview>(`/api/admin/billing/wallets/${userId}`);
+}
+
+export function adjustAdminWallet(input: {
+  userId: number;
+  amountDelta: number;
+  currency: string;
+  reason: string;
+}, idempotencyKey: string): Promise<WalletAdjustment> {
+  return apiFetch<WalletAdjustment>("/api/admin/billing/wallets/adjustments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(input),
+  });
 }

@@ -8,9 +8,11 @@ import com.lumora.cloud.billing.persistence.mapper.PurchaseOrderMapper;
 import com.lumora.cloud.billing.web.BillingWebContracts.CreatePurchaseOrderRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.PlanResponse;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +30,8 @@ class PurchaseOrderServiceTest {
     private final PaymentAttemptMapper paymentMapper = mock(PaymentAttemptMapper.class);
     private final BillingCatalogService catalogService = mock(BillingCatalogService.class);
     private final SubscriptionService subscriptionService = mock(SubscriptionService.class);
+    private final WalletService walletService = mock(WalletService.class);
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
 
     @Test
     void createsImmutablePendingOrderAndExposesMockCapability() {
@@ -55,7 +59,20 @@ class PurchaseOrderServiceTest {
         assertThat(order.amountMinor()).isEqualTo(9_900L);
         assertThat(order.currency()).isEqualTo("CNY");
         assertThat(order.mockPaymentEnabled()).isTrue();
-        assertThat(service.capabilities().availableMethods()).containsExactly("MOCK");
+        assertThat(service.capabilities().availableMethods()).containsExactly("WALLET", "MOCK");
+        verify(events).publishEvent(any(com.lumora.cloud.billing.messaging.OrderExpiryScheduledEvent.class));
+    }
+
+    @Test
+    void expiresPendingOrderIdempotentlyFromMessage() {
+        PurchaseOrderService service = service(new PaymentProperties(
+                true, Duration.ofMinutes(30), Duration.ofDays(30)
+        ));
+        Instant now = Instant.parse("2026-09-01T08:00:00Z");
+        when(orderMapper.expirePendingOrder("LU20260901070000ABCDEFGHIJKL", now)).thenReturn(1);
+
+        assertThat(service.expirePending("LU20260901070000ABCDEFGHIJKL", now)).isTrue();
+        assertThat(service.expirePending("LU20260901070000MISSINGORDER", now)).isFalse();
     }
 
     @Test
@@ -68,13 +85,13 @@ class PurchaseOrderServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(exception -> ((ApiException) exception).getCode())
                 .isEqualTo("MOCK_PAYMENT_DISABLED");
-        assertThat(service.capabilities().availableMethods()).isEmpty();
+        assertThat(service.capabilities().availableMethods()).containsExactly("WALLET");
         verify(orderMapper, never()).findByOrderNoForUpdate(any());
     }
 
     private PurchaseOrderService service(PaymentProperties properties) {
         return new PurchaseOrderService(
-                orderMapper, paymentMapper, catalogService, subscriptionService, properties
+                orderMapper, paymentMapper, catalogService, subscriptionService, walletService, properties, events
         );
     }
 }

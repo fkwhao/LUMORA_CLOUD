@@ -9,4 +9,7 @@ public interface RoleMapper extends BaseMapper<RoleEntity> {
 
     @Select("SELECT id, code, name FROM role WHERE code = #{code} LIMIT 1")
     RoleEntity findByCode(@Param("code") String code);
+
+    @Select("SELECT id, code, name FROM role WHERE code = #{code} LIMIT 1 FOR UPDATE")
+    RoleEntity findByCodeForUpdate(@Param("code") String code);
 }

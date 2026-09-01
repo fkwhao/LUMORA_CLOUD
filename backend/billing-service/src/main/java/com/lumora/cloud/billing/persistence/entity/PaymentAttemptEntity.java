@@ -35,10 +35,24 @@ public class PaymentAttemptEntity {
             String currency,
             Instant paidAt
     ) {
+        return success(id, orderId, PaymentProvider.MOCK, providerPaymentId, amountMinor, currency, paidAt);
+    }
+
+    public static PaymentAttemptEntity walletSuccess(
+            String id, String orderId, String providerPaymentId,
+            long amountMinor, String currency, Instant paidAt
+    ) {
+        return success(id, orderId, PaymentProvider.WALLET, providerPaymentId, amountMinor, currency, paidAt);
+    }
+
+    private static PaymentAttemptEntity success(
+            String id, String orderId, PaymentProvider provider, String providerPaymentId,
+            long amountMinor, String currency, Instant paidAt
+    ) {
         PaymentAttemptEntity entity = new PaymentAttemptEntity();
         entity.id = id;
         entity.orderId = orderId;
-        entity.provider = PaymentProvider.MOCK.name();
+        entity.provider = provider.name();
         entity.providerPaymentId = providerPaymentId;
         entity.amountMinor = amountMinor;
         entity.currency = currency;

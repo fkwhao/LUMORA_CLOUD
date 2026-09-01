@@ -1,0 +1,35 @@
+package com.lumora.cloud.billing.messaging;
+
+import com.lumora.cloud.billing.config.BillingMessagingConfiguration;
+import com.lumora.cloud.billing.service.PurchaseOrderService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+
+@Component
+public class OrderExpiryMessageListener {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderExpiryMessageListener.class);
+
+    private final PurchaseOrderService orderService;
+
+    public OrderExpiryMessageListener(PurchaseOrderService orderService) {
+        this.orderService = orderService;
+    }
+
+    @RabbitListener(
+            queues = BillingMessagingConfiguration.ORDER_EXPIRY_QUEUE,
+            containerFactory = "orderExpiryListenerContainerFactory"
+    )
+    public void expire(String orderNo) {
+        boolean expired = orderService.expirePending(orderNo, Instant.now());
+        if (expired) {
+            log.info("Expired unpaid purchase order {} from RabbitMQ delay queue", orderNo);
+        } else {
+            log.debug("Ignored RabbitMQ expiry message for non-expirable order [{}]", orderNo);
+        }
+    }
+}

@@ -22,6 +22,14 @@ spring:
     password: ${LUMORA_RABBITMQ_PASSWORD}
     publisher-confirm-type: correlated
     publisher-returns: true
+    template:
+      mandatory: true
+      retry:
+        enabled: true
+        max-attempts: 3
+        initial-interval: 500ms
+        multiplier: 2
+        max-interval: 3000ms
     listener:
       simple:
         acknowledge-mode: manual
@@ -31,6 +39,8 @@ spring:
           enabled: true
           max-attempts: 3
           initial-interval: 1000ms
+          multiplier: 2
+          max-interval: 5000ms
   cloud:
     sentinel:
       transport:

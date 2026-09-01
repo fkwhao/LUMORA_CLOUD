@@ -14,9 +14,9 @@
 | `lumora-common-dev.yaml` | Redis、RabbitMQ、Sentinel、MyBatis 与 JWT 公共非敏感参数 | 全部服务 |
 | `lumora-cloud-gateway-dev.yaml` | 网关路由与日志 | Cloud Gateway |
 | `lumora-user-service-dev.yaml` | 用户库、Flyway、Token 生命周期与 Cookie | User Service |
-| `lumora-billing-service-dev.yaml` | 计费库、订单/测试支付、订单过期与预占释放任务 | Billing Service |
+| `lumora-billing-service-dev.yaml` | 计费库、订单/钱包测试支付、订单过期与预占释放任务 | Billing Service |
 | `lumora-model-catalog-service-dev.yaml` | 模型目录库、Flyway、发布缓存与日志 | Model Catalog Service |
-| `lumora-model-gateway-service-dev.yaml` | Provider 连接池、超时、缓存、并发、请求租约与恢复任务 | Model Gateway Service |
+| `lumora-model-gateway-service-dev.yaml` | Provider 连接池、超时、缓存、并发、请求租约、脱敏诊断与恢复任务 | Model Gateway Service |
 
 在 Nacos 控制台中逐个创建配置，把对应文件正文完整粘贴进去并发布。`# Group` 注释可以保留，
 不会影响 YAML 解析。应用端使用非 `optional` 的导入方式，因此缺少任意一个被该服务引用的 Data ID
@@ -35,3 +35,6 @@ Nacos。供应商 API Key 由管理端写入 Model Catalog 的加密凭据表。
 Model Gateway 和 Cloud Gateway 的调用闭环依赖当前目录中最新的
 `lumora-model-gateway-service-dev.yaml` 与 `lumora-cloud-gateway-dev.yaml`。修改仓库文件后需要在
 Nacos 控制台重新发布同名 Data ID。旧版环境变量 `credential_reference` 仅用于兼容已有 Provider。
+
+Billing Service 的购买订单和充值订单过期消费者依赖 `lumora-common-dev.yaml` 中的 RabbitMQ 发布与消费重试参数。
+该文件有修改时需要重新发布同名 Data ID，并重启 Billing Service，使监听容器按新参数重新创建。

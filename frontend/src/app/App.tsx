@@ -9,10 +9,14 @@ const AdminOverviewPage = lazy(() => import("../pages/admin/AdminOverviewPage").
 const BillingManagementPage = lazy(() => import("../pages/admin/BillingManagementPage").then((module) => ({ default: module.BillingManagementPage })));
 const ModelCatalogPage = lazy(() => import("../pages/admin/ModelCatalogPage").then((module) => ({ default: module.ModelCatalogPage })));
 const ModelProvidersPage = lazy(() => import("../pages/admin/ModelProvidersPage").then((module) => ({ default: module.ModelProvidersPage })));
+const UserManagementPage = lazy(() => import("../pages/admin/UserManagementPage").then((module) => ({ default: module.UserManagementPage })));
+const AdminWalletsPage = lazy(() => import("../pages/admin/AdminWalletsPage").then((module) => ({ default: module.AdminWalletsPage })));
+const GatewayDiagnosticsPage = lazy(() => import("../pages/admin/GatewayDiagnosticsPage").then((module) => ({ default: module.GatewayDiagnosticsPage })));
 const ConsoleOverviewPage = lazy(() => import("../pages/console/ConsoleOverviewPage").then((module) => ({ default: module.ConsoleOverviewPage })));
 const BillingHistoryPage = lazy(() => import("../pages/console/BillingHistoryPage").then((module) => ({ default: module.BillingHistoryPage })));
 const PlansPage = lazy(() => import("../pages/console/PlansPage").then((module) => ({ default: module.PlansPage })));
 const PurchaseOrdersPage = lazy(() => import("../pages/console/PurchaseOrdersPage").then((module) => ({ default: module.PurchaseOrdersPage })));
+const WalletPage = lazy(() => import("../pages/console/WalletPage").then((module) => ({ default: module.WalletPage })));
 
 export function App() {
   const route = resolveRoute(window.location.pathname);
@@ -80,6 +84,18 @@ export function App() {
     );
   }
 
+  if (route === "admin-users") {
+    return <AppShell active="users" area="admin" user={user}><PageSuspense><UserManagementPage /></PageSuspense></AppShell>;
+  }
+
+  if (route === "admin-wallets") {
+    return <AppShell active="wallets" area="admin" user={user}><PageSuspense><AdminWalletsPage /></PageSuspense></AppShell>;
+  }
+
+  if (route === "admin-gateway") {
+    return <AppShell active="gateway" area="admin" user={user}><PageSuspense><GatewayDiagnosticsPage /></PageSuspense></AppShell>;
+  }
+
   if (route === "admin-billing") {
     return (
       <AppShell active="billing" area="admin" user={user}>
@@ -102,6 +118,10 @@ export function App() {
         <PageSuspense><PlansPage /></PageSuspense>
       </AppShell>
     );
+  }
+
+  if (route === "console-wallet") {
+    return <AppShell active="wallet" area="console" user={user}><PageSuspense><WalletPage /></PageSuspense></AppShell>;
   }
 
   if (route === "console-orders" || route === "console-order-detail") {

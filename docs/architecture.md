@@ -26,7 +26,7 @@ Desktop 与网页控制台使用独立登录会话。网页 URL 不携带 Deskto
 | --- | --- | --- |
 | `cloud-gateway` | 路由、凭据初验、上下文传递和粗粒度限流 | 46100 |
 | `user-service` | 注册、登录、设备会话、角色与审计 | 46101 |
-| `billing-service` | 套餐、订单、支付确认、周额度、预占、结算与不可变账本；钱包后续实现 | 46102 |
+| `billing-service` | 套餐、订单、钱包/充值/支付、周额度、预占、结算与不可变账本 | 46102 |
 | `model-catalog-service` | 模型目录、Token 额度费率、多时段成本/额度倍率版本和配置发布 | 46103 |
 | `model-gateway-service` | 供应商流式代理、权威 Usage 和计费编排 | 46104 |
 
@@ -78,10 +78,15 @@ frontend/src/
 
 User Service 认证闭环已经实现：Flyway 创建用户、角色、设备会话、Refresh Token 和登录审计表；
 Gateway 完成 JWT 校验、Redis 会话撤销检查和可信身份头注入；网页端完成真实登录、刷新和退出。
+管理端已支持用户检索、角色调整、启停账号和撤销会话，并保护当前管理员及最后一个启用管理员。
 Billing Service 已完成套餐/版本、订单、开发环境测试支付、购买订阅发放/顺延、管理员订阅发放、
-订阅锚定的七天额度桶、预占/结算/释放、用量、待对账状态和不可变账本。Model Catalog Service 已完成供应商、模型草稿、不可变发布版本、启停、用户目录、
+订阅锚定的七天额度桶、预占/结算/释放、用量、待对账状态和不可变账本；待支付订单由 RabbitMQ TTL/死信
+队列及时触发过期，并由幂等条件更新和 MySQL 定时扫描兜底。Model Catalog Service 已完成供应商、模型草稿、不可变发布版本、启停、用户目录、
 内部解析、AES-GCM Provider 凭据管理和 Redis 发布快照。两者均已通过真实 Nacos/MySQL 集成测试，Model Catalog 还验证了 Redis
 缓存链路。Model Gateway 已经实现模型解析、分布式并发控制、Billing 预占、Chat Completions、
 Responses 与 Anthropic Messages JSON/SSE 代理、权威 Usage 结算和待对账补偿，并通过真实
 Nacos/Redis 联合测试。管理端运营总览已通过各领域只读统计接口展示真实用户、订单、收入、Usage 与
-模型资源数据。钱包、真实第三方支付渠道和 Desktop 云端模型适配仍待实现。
+模型资源数据。Billing 还已完成多币种钱包、MOCK 充值订单、管理员余额调整、不可变钱包流水及钱包套餐
+支付；充值与购买订单均由 RabbitMQ TTL/死信及时过期、MySQL 扫描兜底。Model Gateway 额外在 Redis
+保留有限期限的脱敏诊断记录，管理端可查看成功率、耗时和最近请求，不记录 Prompt、响应正文或密钥。
+真实第三方支付渠道和 Desktop 云端模型适配仍待实现。

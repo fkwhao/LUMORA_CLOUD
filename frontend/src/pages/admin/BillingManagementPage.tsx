@@ -17,7 +17,6 @@ import {
   PackagePlus,
   Plus,
   RefreshCw,
-  Search,
   ShoppingBag,
   Sparkles,
   UserPlus,
@@ -38,13 +37,25 @@ import {
   type BillingSubscription,
   type PurchaseOrder,
 } from "../../api/billing";
-import { searchAdminUsers, type AdminUser } from "../../api/users";
+import type { AdminUser } from "../../api/users";
+import { useAdminUserSearch } from "../../features/admin/useAdminUserSearch";
 
 export function BillingManagementPage() {
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [subscriptions, setSubscriptions] = useState<BillingSubscription[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [users, setUsers] = useState<AdminUser[]>([]);
+  const {
+    query: userQuery,
+    setQuery: setUserQuery,
+    users,
+    loading: userSearchLoading,
+    loadingMore: userSearchLoadingMore,
+    error: userSearchError,
+    hasMore: hasMoreUsers,
+    queryIsValid: userQueryIsValid,
+    reload: reloadUsers,
+    loadMore: loadMoreUsers,
+  } = useAdminUserSearch();
   const [versions, setVersions] = useState<Record<number, BillingPlan[]>>({});
   const [historyPlanId, setHistoryPlanId] = useState<number | null>(null);
   const [versionPlanId, setVersionPlanId] = useState<number | null>(null);
@@ -63,16 +74,14 @@ export function BillingManagementPage() {
     setLoading(true);
     setError(null);
     try {
-      const [planData, subscriptionData, orderData, userData] = await Promise.all([
+      const [planData, subscriptionData, orderData] = await Promise.all([
         listAdminPlans(),
         listAdminSubscriptions(),
         listAdminOrders(),
-        searchAdminUsers(),
       ]);
       setPlans(planData);
       setSubscriptions(subscriptionData);
       setOrders(orderData);
-      setUsers(userData);
       setVersions({});
     } catch (reason) {
       setError(message(reason));
@@ -161,20 +170,6 @@ export function BillingManagementPage() {
     }
   }
 
-  async function searchUsers(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const query = textValue(new FormData(event.currentTarget), "query");
-    setPending("users");
-    clearFeedback();
-    try {
-      setUsers(await searchAdminUsers(query));
-    } catch (reason) {
-      setError(message(reason));
-    } finally {
-      setPending(null);
-    }
-  }
-
   async function toggleHistory(plan: BillingPlan) {
     if (historyPlanId === plan.planId) {
       setHistoryPlanId(null);
@@ -219,17 +214,17 @@ export function BillingManagementPage() {
             套餐价格和周额度按版本冻结；已存在的订阅不会被后续版本修改。
           </p>
         </div>
-        <Button isDisabled={loading} onPress={() => void load()} variant="secondary">
+        <Button isDisabled={loading || userSearchLoading} onPress={() => { void load(); void reloadUsers(); }} variant="secondary">
           <RefreshCw size={16} /> 刷新
         </Button>
       </header>
 
-      {(error || notice) && (
+      {(error || userSearchError || notice) && (
         <div
-          className={`rounded-xl px-4 py-3 text-sm ${error ? "bg-danger-soft text-danger" : "bg-success-soft text-success"}`}
-          role={error ? "alert" : "status"}
+          className={`rounded-xl px-4 py-3 text-sm ${error || userSearchError ? "bg-danger-soft text-danger" : "bg-success-soft text-success"}`}
+          role={error || userSearchError ? "alert" : "status"}
         >
-          {error ?? notice}
+          {error ?? userSearchError ?? notice}
         </div>
       )}
 
@@ -310,11 +305,17 @@ export function BillingManagementPage() {
           )}
 
           <GrantForm
-            key={`${formVersion}:${plans.map((plan) => plan.planVersionId).join("-")}:${users.map((user) => user.id).join("-")}`}
-            onSearch={searchUsers}
+            key={`${formVersion}:${plans.map((plan) => plan.planVersionId).join("-")}`}
+            hasMoreUsers={hasMoreUsers}
+            onLoadMoreUsers={() => void loadMoreUsers()}
             onSubmit={grant}
-            pending={pending !== null}
+            onUserQueryChange={setUserQuery}
+            pending={pending !== null || userSearchLoading}
             plans={plans}
+            userQuery={userQuery}
+            userQueryIsValid={userQueryIsValid}
+            userSearchLoading={userSearchLoading}
+            userSearchLoadingMore={userSearchLoadingMore}
             users={users}
           />
         </div>
@@ -397,12 +398,30 @@ function PriceAndQuotaFields({ plan }: { plan?: BillingPlan }) {
   );
 }
 
-function GrantForm({ plans, users, pending, onSubmit, onSearch }: {
+function GrantForm({
+  plans,
+  users,
+  pending,
+  userQuery,
+  userQueryIsValid,
+  userSearchLoading,
+  userSearchLoadingMore,
+  hasMoreUsers,
+  onSubmit,
+  onUserQueryChange,
+  onLoadMoreUsers,
+}: {
   plans: BillingPlan[];
   users: AdminUser[];
   pending: boolean;
+  userQuery: string;
+  userQueryIsValid: boolean;
+  userSearchLoading: boolean;
+  userSearchLoadingMore: boolean;
+  hasMoreUsers: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onSearch: (event: FormEvent<HTMLFormElement>) => void;
+  onUserQueryChange: (value: string) => void;
+  onLoadMoreUsers: () => void;
 }) {
   const now = new Date();
   const end = new Date(now);
@@ -416,10 +435,11 @@ function GrantForm({ plans, users, pending, onSubmit, onSearch }: {
         <div><Card.Title>发放用户订阅</Card.Title><Card.Description>管理员手动发放，引用键保证幂等</Card.Description></div>
       </Card.Header>
       <Card.Content className="gap-4">
-        <form className="flex gap-2" onSubmit={onSearch}>
-          <TextField fullWidth name="query"><Label>查找用户</Label><Input fullWidth placeholder="邮箱前缀或显示名称" /></TextField>
-          <Button className="self-end" isDisabled={pending} type="submit" variant="secondary"><Search size={16} /></Button>
-        </form>
+        <div className="space-y-2">
+          <TextField fullWidth><Label>查找用户</Label><Input fullWidth onChange={(event) => onUserQueryChange(event.target.value)} placeholder="邮箱前缀或显示名称" value={userQuery} /></TextField>
+          <p className={`text-xs ${userQueryIsValid ? "text-muted" : "text-warning"}`}>{!userQueryIsValid ? "请输入至少 2 个字符；清空可查看最近用户。" : userSearchLoading ? "正在搜索…" : `已加载 ${users.length} 个用户，输入后会自动搜索。`}</p>
+          {hasMoreUsers && <Button fullWidth isDisabled={pending || userSearchLoadingMore} onPress={onLoadMoreUsers} size="sm" variant="tertiary">{userSearchLoadingMore ? "正在加载…" : "加载更多用户"}</Button>}
+        </div>
         <form className="space-y-4" onSubmit={onSubmit}>
           <Select fullWidth isRequired name="userId" placeholder="请选择用户" variant="secondary">
             <Label>用户</Label>

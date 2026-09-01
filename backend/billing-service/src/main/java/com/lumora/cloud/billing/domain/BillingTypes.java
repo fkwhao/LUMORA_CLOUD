@@ -12,5 +12,5 @@ public final class BillingTypes {
     public enum LedgerEntryType { GRANT, RESERVE, SETTLE, RELEASE, ADJUSTMENT }
     public enum PurchaseOrderStatus { PENDING_PAYMENT, FULFILLED, CANCELED, EXPIRED }
     public enum PaymentAttemptStatus { SUCCEEDED, FAILED }
-    public enum PaymentProvider { MOCK }
+    public enum PaymentProvider { MOCK, WALLET }
 }

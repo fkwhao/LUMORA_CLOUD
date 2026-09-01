@@ -11,6 +11,7 @@ import com.lumora.cloud.billing.web.BillingWebContracts.BillingOverviewResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.CreatePlanRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.CreatePlanVersionRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.CreatePurchaseOrderRequest;
+import com.lumora.cloud.billing.web.BillingWebContracts.CreateWalletTopupRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.GrantSubscriptionRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.PlanResponse;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,9 @@ class BillingServiceMySqlIntegrationTest {
 
     @Autowired
     private PurchaseOrderService orderService;
+
+    @Autowired
+    private WalletService walletService;
 
     @Autowired
     private BillingStatisticsService statisticsService;
@@ -100,6 +104,26 @@ class BillingServiceMySqlIntegrationTest {
         assertThat(orderService.list(purchaseUserId)).singleElement()
                 .extracting(order -> order.orderNo() + ":" + order.status())
                 .isEqualTo(pendingOrder.orderNo() + ":FULFILLED");
+
+        long walletPurchaseUserId = userId + 2;
+        var topup = walletService.createTopup(
+                walletPurchaseUserId, "it-topup-" + suffix,
+                new CreateWalletTopupRequest(50_000L, "CNY")
+        );
+        assertThat(walletService.mockPayTopup(walletPurchaseUserId, topup.orderNo()).status()).isEqualTo("PAID");
+        var walletOrder = orderService.create(
+                walletPurchaseUserId, "it-wallet-order-" + suffix,
+                new CreatePurchaseOrderRequest(plan.planVersionId())
+        );
+        var walletPaid = orderService.walletPay(walletPurchaseUserId, walletOrder.orderNo());
+        assertThat(walletPaid.status()).isEqualTo("FULFILLED");
+        assertThat(walletPaid.paymentProvider()).isEqualTo("WALLET");
+        assertThat(walletService.overview(walletPurchaseUserId).accounts()).singleElement()
+                .extracting(account -> account.availableMinor())
+                .isEqualTo(30_100L);
+        assertThat(walletService.overview(walletPurchaseUserId).ledger())
+                .extracting(entry -> entry.entryType() + ":" + entry.amountDelta())
+                .contains("TOPUP:50000", "PURCHASE:-19900");
 
         subscriptionService.grant(new GrantSubscriptionRequest(
                 userId, plan.planVersionId(), "it-grant-" + suffix,
@@ -166,10 +190,10 @@ class BillingServiceMySqlIntegrationTest {
 
         var statisticsAfter = statisticsService.statistics();
         assertThat(statisticsAfter.publishedPlans() - statisticsBefore.publishedPlans()).isEqualTo(1);
-        assertThat(statisticsAfter.activeSubscriptions() - statisticsBefore.activeSubscriptions()).isEqualTo(2);
+        assertThat(statisticsAfter.activeSubscriptions() - statisticsBefore.activeSubscriptions()).isEqualTo(3);
         assertThat(statisticsAfter.fulfilledOrdersThisMonth() - statisticsBefore.fulfilledOrdersThisMonth())
-                .isEqualTo(1);
-        assertThat(revenue(statisticsAfter, "CNY") - revenue(statisticsBefore, "CNY")).isEqualTo(19_900L);
+                .isEqualTo(2);
+        assertThat(revenue(statisticsAfter, "CNY") - revenue(statisticsBefore, "CNY")).isEqualTo(39_800L);
         assertThat(statisticsAfter.modelRequestsToday() - statisticsBefore.modelRequestsToday()).isEqualTo(2);
         assertThat(statisticsAfter.completedModelRequestsToday()
                 - statisticsBefore.completedModelRequestsToday()).isEqualTo(1);

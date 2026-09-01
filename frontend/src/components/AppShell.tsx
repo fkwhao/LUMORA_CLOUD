@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Users,
   WalletCards,
+  Landmark,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -28,17 +29,19 @@ const consoleNavigation = [
   { key: "overview", label: "套餐概览", href: "/console", icon: Gauge },
   { key: "plans", label: "套餐与购买", href: "/console/plans", icon: WalletCards },
   { key: "orders", label: "订单记录", href: "/console/orders", icon: ShoppingBag },
+  { key: "wallet", label: "钱包管理", href: "/console/wallet", icon: Landmark },
   { key: "usage", label: "用量明细", href: "/console/usage", icon: Activity },
   { key: "ledger", label: "额度流水", href: "/console/ledger", icon: ReceiptText },
 ];
 
 const adminNavigation = [
   { key: "admin", label: "运营总览", href: "/admin", icon: LayoutDashboard },
-  { key: "users", label: "用户与角色", href: "/admin", icon: Users },
+  { key: "users", label: "用户与角色", href: "/admin/users", icon: Users },
+  { key: "wallets", label: "用户钱包", href: "/admin/wallets", icon: Landmark },
   { key: "billing", label: "套餐与计费", href: "/admin/billing", icon: WalletCards },
   { key: "models", label: "模型目录", href: "/admin/models", icon: Boxes },
   { key: "providers", label: "模型供应商", href: "/admin/providers", icon: ServerCog },
-  { key: "gateway", label: "网关诊断", href: "/admin", icon: ServerCog },
+  { key: "gateway", label: "网关诊断", href: "/admin/gateway", icon: ServerCog },
 ];
 
 export function AppShell({ active, area, children, user }: AppShellProps) {

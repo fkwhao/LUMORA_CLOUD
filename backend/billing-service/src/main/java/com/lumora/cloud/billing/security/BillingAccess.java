@@ -25,6 +25,11 @@ public class BillingAccess {
         }
     }
 
+    public Long requireAdminUserId() {
+        requireAdmin();
+        return requireUserId();
+    }
+
     private UserContext context() {
         return UserContextHolder.current().orElseThrow(() ->
                 new ApiException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "请先登录")

@@ -44,13 +44,14 @@ public interface PurchaseOrderMapper extends BaseMapper<PurchaseOrderEntity> {
     @Update("""
             UPDATE billing_purchase_order
             SET status = 'FULFILLED', paid_at = #{paidAt}, fulfilled_at = #{paidAt},
-                subscription_id = #{subscriptionId}
+                subscription_id = #{subscriptionId}, payment_provider = #{paymentProvider}
             WHERE id = #{id} AND status = 'PENDING_PAYMENT'
             """)
     int markFulfilled(
             @Param("id") String id,
             @Param("paidAt") Instant paidAt,
-            @Param("subscriptionId") String subscriptionId
+            @Param("subscriptionId") String subscriptionId,
+            @Param("paymentProvider") String paymentProvider
     );
 
     @Update("""
@@ -66,6 +67,13 @@ public interface PurchaseOrderMapper extends BaseMapper<PurchaseOrderEntity> {
             WHERE id = #{id} AND status = 'PENDING_PAYMENT'
             """)
     int markExpired(@Param("id") String id);
+
+    @Update("""
+            UPDATE billing_purchase_order
+            SET status = 'EXPIRED'
+            WHERE order_no = #{orderNo} AND status = 'PENDING_PAYMENT' AND expires_at <= #{now}
+            """)
+    int expirePendingOrder(@Param("orderNo") String orderNo, @Param("now") Instant now);
 
     @Update("""
             UPDATE billing_purchase_order

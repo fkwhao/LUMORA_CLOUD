@@ -17,4 +17,5 @@ public class RoleEntity {
 
     public Long getId() { return id; }
     public String getCode() { return code; }
+    public String getName() { return name; }
 }
