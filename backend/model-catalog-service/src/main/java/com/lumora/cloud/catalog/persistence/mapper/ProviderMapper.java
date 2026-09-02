@@ -17,7 +17,8 @@ public interface ProviderMapper extends BaseMapper<ProviderEntity> {
     @Update("""
             UPDATE model_provider
             SET name = #{name}, protocol_type = #{protocolType}, base_url = #{baseUrl},
-                status = #{status}, revision = revision + 1
+                max_concurrency = #{maxConcurrency}, requests_per_minute = #{requestsPerMinute},
+                tokens_per_minute = #{tokensPerMinute}, status = #{status}, revision = revision + 1
             WHERE id = #{id} AND revision = #{expectedRevision}
             """)
     int updateOptimistic(
@@ -26,6 +27,9 @@ public interface ProviderMapper extends BaseMapper<ProviderEntity> {
             @Param("name") String name,
             @Param("protocolType") String protocolType,
             @Param("baseUrl") String baseUrl,
+            @Param("maxConcurrency") Integer maxConcurrency,
+            @Param("requestsPerMinute") Integer requestsPerMinute,
+            @Param("tokensPerMinute") Long tokensPerMinute,
             @Param("status") String status
     );
 

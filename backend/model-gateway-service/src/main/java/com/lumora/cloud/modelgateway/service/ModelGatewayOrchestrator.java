@@ -9,11 +9,13 @@ import com.lumora.cloud.api.billing.BillingContracts.ReservationStatus;
 import com.lumora.cloud.api.billing.BillingContracts.ReserveRequest;
 import com.lumora.cloud.api.billing.BillingContracts.SettleRequest;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
+import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelRoute;
 import com.lumora.cloud.api.catalog.ProviderProtocol;
 import com.lumora.cloud.modelgateway.concurrency.ConcurrencyPermit;
 import com.lumora.cloud.modelgateway.concurrency.DistributedConcurrencyLimiter;
 import com.lumora.cloud.modelgateway.concurrency.RequestLease;
 import com.lumora.cloud.modelgateway.concurrency.RequestLeaseService;
+import com.lumora.cloud.modelgateway.concurrency.RouteCapacityException;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
 import com.lumora.cloud.modelgateway.domain.TokenUsage;
 import com.lumora.cloud.modelgateway.domain.GatewayProtocol;
@@ -26,6 +28,9 @@ import com.lumora.cloud.modelgateway.provider.ProviderCredentialResolver;
 import com.lumora.cloud.modelgateway.provider.ProviderHttpException;
 import com.lumora.cloud.modelgateway.provider.StreamUsageTracker;
 import com.lumora.cloud.modelgateway.recovery.BillingRecoveryService;
+import com.lumora.cloud.modelgateway.routing.UpstreamRouteSelector;
+import com.lumora.cloud.modelgateway.routing.RouteCircuitBreaker;
+import com.lumora.cloud.modelgateway.routing.DistributedRouteRateLimiter;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
 import com.lumora.cloud.modelgateway.web.ModelGatewayResponse;
 import com.lumora.cloud.modelgateway.service.QuotaCalculator.PricingSnapshot;
@@ -44,7 +49,9 @@ import reactor.core.scheduler.Schedulers;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.concurrent.TimeoutException;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 @Service
 public class ModelGatewayOrchestrator {
@@ -58,6 +65,9 @@ public class ModelGatewayOrchestrator {
     private final RequestIds requestIds;
     private final RequestLeaseService requestLeases;
     private final DistributedConcurrencyLimiter concurrencyLimiter;
+    private final UpstreamRouteSelector routeSelector;
+    private final RouteCircuitBreaker routeCircuitBreaker;
+    private final DistributedRouteRateLimiter routeRateLimiter;
     private final BillingControlService billing;
     private final BillingRecoveryService recovery;
     private final ModelProviderClient providerClient;
@@ -74,6 +84,9 @@ public class ModelGatewayOrchestrator {
             RequestIds requestIds,
             RequestLeaseService requestLeases,
             DistributedConcurrencyLimiter concurrencyLimiter,
+            UpstreamRouteSelector routeSelector,
+            RouteCircuitBreaker routeCircuitBreaker,
+            DistributedRouteRateLimiter routeRateLimiter,
             BillingControlService billing,
             BillingRecoveryService recovery,
             ModelProviderClient providerClient,
@@ -89,6 +102,9 @@ public class ModelGatewayOrchestrator {
         this.requestIds = requestIds;
         this.requestLeases = requestLeases;
         this.concurrencyLimiter = concurrencyLimiter;
+        this.routeSelector = routeSelector;
+        this.routeCircuitBreaker = routeCircuitBreaker;
+        this.routeRateLimiter = routeRateLimiter;
         this.billing = billing;
         this.recovery = recovery;
         this.providerClient = providerClient;
@@ -128,52 +144,141 @@ public class ModelGatewayOrchestrator {
     ) {
         return Mono.fromCallable(() -> {
                     PricingSnapshot pricing = quotaCalculator.snapshot(model, Instant.now());
-                    ProviderProtocol upstreamProtocol = ProviderProtocol.parse(model.protocolType());
-                    return new PreparedCall(
-                            model,
-                            request.protocol().isInternal()
-                                    ? lumoraProtocol.upstreamBody(
-                                            request.originalBody(), model, upstreamProtocol,
-                                            request.stream(), request.requestedMaxOutputTokens()
-                                    )
-                                    : validator.upstreamBody(request, model),
-                            credentials.resolve(model.credentialReference()),
-                            pricing,
+                    return new PreparedModel(
+                            model, pricing,
                             quotaCalculator.maximum(model, request.requestedMaxOutputTokens(), pricing),
-                            upstreamProtocol
+                            routeSelector.orderedCandidates(model)
                     );
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .onErrorResume(error -> requestLeases.release(lease).then(Mono.error(error)))
-                .flatMap(prepared -> concurrencyLimiter.acquire(context.userId(), model.modelCode())
-                        .onErrorResume(error -> requestLeases.release(lease).then(Mono.error(error)))
-                        .flatMap(permit -> reserveAndInvoke(context, request, lease, permit, prepared)));
+                .flatMap(prepared -> reserveAndInvoke(context, request, lease, prepared));
     }
 
     private Mono<ModelGatewayResponse> reserveAndInvoke(
             GatewayRequestContext context,
             ValidatedChatRequest request,
             RequestLease lease,
-            ConcurrencyPermit permit,
-            PreparedCall call
+            PreparedModel prepared
     ) {
         ReserveRequest reserve = new ReserveRequest(
-                lease.billingRequestId(), context.clientRequestId(), context.userId(), call.model().modelCode(),
-                call.model().pricingVersion(), call.maximumQuota(),
-                call.pricing().pricingAt(), call.pricing().quotaMultiplier(), call.pricing().ruleName(),
+                lease.billingRequestId(), context.clientRequestId(), context.userId(), prepared.model().modelCode(),
+                prepared.model().pricingVersion(), prepared.maximumQuota(),
+                prepared.pricing().pricingAt(), prepared.pricing().quotaMultiplier(), prepared.pricing().ruleName(),
                 Instant.now().plus(properties.provider().maxCallDuration()).plusSeconds(30)
         );
         return billing.reserve(reserve)
+                .onErrorResume(error -> requestLeases.release(lease).then(Mono.error(error)))
                 .flatMap(reservation -> validateFreshReservation(reservation)
-                        .then(invokeProvider(context, request, call))
-                        .flatMap(provider -> request.stream()
+                        .onErrorResume(error -> requestLeases.release(lease).then(Mono.error(error)))
+                        .then(selectAndInvoke(context, request, prepared, 0, null)
+                                .onErrorResume(error -> handleReservedFailure(error, lease)))
+                        .flatMap(selected -> request.stream()
                                 ? Mono.just(streamingResponse(
-                                        context, lease, permit, call, request, provider
+                                        context, lease, selected.permit(), selected.call(), request,
+                                        selected.provider()
                                 ))
                                 : bufferedResponse(
-                                        context, lease, permit, call, request, provider
-                                )))
-                .onErrorResume(error -> handleBeforeResponseFailure(error, lease, permit));
+                                        context, lease, selected.permit(), selected.call(), request,
+                                        selected.provider()
+                                ).onErrorResume(error -> handleBeforeResponseFailure(
+                                        error, lease, selected.permit()
+                                ))));
+    }
+
+    private Mono<SelectedProvider> selectAndInvoke(
+            GatewayRequestContext context,
+            ValidatedChatRequest request,
+            PreparedModel prepared,
+            int index,
+            Throwable previousFailure
+    ) {
+        if (index >= prepared.routes().size()) {
+            return Mono.error(previousFailure == null
+                    ? new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "MODEL_ROUTE_UNAVAILABLE",
+                    "当前模型没有可用的上游路由")
+                    : previousFailure);
+        }
+        ResolvedModelRoute route = prepared.routes().get(index);
+        if (!request.protocol().isInternal()
+                && ProviderProtocol.parse(route.protocolType()) != request.protocol().providerProtocol()) {
+            return selectAndInvoke(context, request, prepared, index + 1, previousFailure);
+        }
+        return prepareRoute(request, prepared, route)
+                .flatMap(call -> concurrencyLimiter.acquire(
+                                context.userId(), prepared.model().modelCode(), route
+                        )
+                        .flatMap(permit -> routeRateLimiter.acquire(route, estimatedTokens(request, prepared.model()))
+                                .then(routeCircuitBreaker.protect(
+                                        route, () -> invokeProvider(context, request, call)
+                                ))
+                                .map(provider -> new SelectedProvider(call, permit, provider))
+                                .onErrorResume(error -> concurrencyLimiter.release(permit)
+                                        .then(Mono.error(error)))))
+                .onErrorResume(error -> tryNextRoute(context, request, prepared, index, route, error));
+    }
+
+    private Mono<SelectedProvider> tryNextRoute(
+            GatewayRequestContext context,
+            ValidatedChatRequest request,
+            PreparedModel prepared,
+            int index,
+            ResolvedModelRoute route,
+            Throwable error
+    ) {
+        if (route.failoverEnabled() && index + 1 < prepared.routes().size() && isFailoverEligible(error)) {
+            log.warn("Model route failed over model={} routeId={} provider={} failure={}",
+                    prepared.model().modelCode(), route.routeId(), route.providerCode(),
+                    error.getClass().getSimpleName());
+            return selectAndInvoke(context, request, prepared, index + 1, error);
+        }
+        return Mono.error(error);
+    }
+
+    private Mono<PreparedCall> prepareRoute(
+            ValidatedChatRequest request,
+            PreparedModel prepared,
+            ResolvedModelRoute route
+    ) {
+        return Mono.fromCallable(() -> {
+            ResolvedModelConfig routedModel = prepared.model().withRoute(route);
+            ProviderProtocol protocol = ProviderProtocol.parse(route.protocolType());
+            ObjectNode upstreamBody = request.protocol().isInternal()
+                    ? lumoraProtocol.upstreamBody(
+                    request.originalBody(), routedModel, protocol,
+                    request.stream(), request.requestedMaxOutputTokens())
+                    : validator.upstreamBody(request, routedModel);
+            return new PreparedCall(
+                    routedModel, route, upstreamBody, credentials.resolve(route.credentialReference()),
+                    prepared.pricing(), prepared.maximumQuota(), protocol
+            );
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private boolean isFailoverEligible(Throwable error) {
+        if (error instanceof RouteCapacityException) {
+            return true;
+        }
+        if (error instanceof ProviderHttpException providerError) {
+            int status = providerError.getStatus().value();
+            return status == 401 || status == 403 || status == 408 || status == 429 || status >= 500;
+        }
+        return !(error instanceof ApiException);
+    }
+
+    private long estimatedTokens(ValidatedChatRequest request, ResolvedModelConfig model) {
+        long estimatedInput = Math.max(1L, request.originalBody().toString().length() / 4L);
+        long requestedOutput = request.requestedMaxOutputTokens() == Long.MAX_VALUE
+                ? model.capabilities().maxOutputTokens()
+                : Math.min(request.requestedMaxOutputTokens(), model.capabilities().maxOutputTokens());
+        long total;
+        try {
+            total = Math.addExact(estimatedInput, requestedOutput);
+        } catch (ArithmeticException ignored) {
+            total = Long.MAX_VALUE;
+        }
+        return Math.max(1L, Math.min(total,
+                model.capabilities().contextWindow() + model.capabilities().maxOutputTokens()));
     }
 
     private Mono<ProviderCall> invokeProvider(
@@ -235,7 +340,7 @@ public class ModelGatewayOrchestrator {
                                     : bytes;
                             return new ModelGatewayResponse(
                                     provider.status(), responseHeaders(
-                                            provider.headers(), context, call.model(), false,
+                                            provider.headers(), context, call.model(), call.route(), false,
                                             request.protocol().isInternal()
                                     ),
                                     Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(responseBytes))
@@ -256,7 +361,8 @@ public class ModelGatewayOrchestrator {
             usage = usageParser.parse(protocol, objectMapper.readTree(bytes));
         } catch (Exception ignored) {
         }
-        return finalizeSuccess(context, lease, permit, call, usage, "供应商成功响应缺少权威 Usage");
+        return concurrencyLimiter.release(permit)
+                .then(finalizeSuccess(context, lease, call, usage, "供应商成功响应缺少权威 Usage"));
     }
 
     private ModelGatewayResponse streamingResponse(
@@ -278,28 +384,30 @@ public class ModelGatewayOrchestrator {
                 : monitored;
         Flux<DataBuffer> body = translated
                 .concatWith(Flux.defer(() -> {
-                    tracker.finish();
-                    return finalizeOnce(
-                            finalized,
-                            finalizeSuccess(context, lease, permit, call, tracker.usage(),
-                                    "供应商流式响应缺少权威 Usage")
-                    ).thenMany(Flux.empty());
+                    return releaseAndFinalizeOnce(finalized, lease, permit, () -> {
+                        tracker.finish();
+                        return finalizeSuccess(context, lease, call, tracker.usage(),
+                                "供应商流式响应缺少权威 Usage");
+                    }).thenMany(Flux.empty());
                 }))
-                .onErrorResume(error -> finalizeOnce(finalized, finalizeStreamTermination(
-                                context, lease, permit, call, tracker,
-                                "供应商流式响应中断，计费状态待确认"
-                        ))
+                .onErrorResume(error -> releaseAndFinalizeOnce(
+                                finalized, lease, permit,
+                                () -> finalizeStreamTermination(
+                                        context, lease, call, tracker,
+                                        "供应商流式响应中断，计费状态待确认"
+                                )
+                        )
                         .thenMany(Flux.error(error)))
-                .doOnCancel(() -> finalizeOnce(
-                        finalized,
-                        finalizeStreamTermination(
-                                context, lease, permit, call, tracker,
+                .doOnCancel(() -> releaseAndFinalizeOnce(
+                        finalized, lease, permit,
+                        () -> finalizeStreamTermination(
+                                context, lease, call, tracker,
                                 "客户端取消流式响应，供应商计费状态待确认"
                         )
-                ).subscribe());
+                ).subscribe(ignored -> { }, error -> { }));
         return new ModelGatewayResponse(
                 provider.status(), responseHeaders(
-                        provider.headers(), context, call.model(), true, request.protocol().isInternal()
+                        provider.headers(), context, call.model(), call.route(), true, request.protocol().isInternal()
                 ), body
         );
     }
@@ -315,7 +423,6 @@ public class ModelGatewayOrchestrator {
     private Mono<Boolean> finalizeSuccess(
             GatewayRequestContext context,
             RequestLease lease,
-            ConcurrencyPermit permit,
             PreparedCall call,
             TokenUsage usage,
             String missingUsageReason
@@ -332,26 +439,24 @@ public class ModelGatewayOrchestrator {
             );
             billingResult = recovery.settle(lease.billingRequestId(), settlement);
         }
-        return billingResult.flatMap(completed -> cleanup(lease, permit, completed).thenReturn(completed));
+        return finalizeAccounting(lease, billingResult);
     }
 
-    private Mono<Boolean> finalizePending(RequestLease lease, ConcurrencyPermit permit, String reason) {
-        return recovery.pending(lease.billingRequestId(), reason)
-                .flatMap(completed -> cleanup(lease, permit, completed).thenReturn(completed));
+    private Mono<Boolean> finalizePending(RequestLease lease, String reason) {
+        return finalizeAccounting(lease, recovery.pending(lease.billingRequestId(), reason));
     }
 
     private Mono<Boolean> finalizeStreamTermination(
             GatewayRequestContext context,
             RequestLease lease,
-            ConcurrencyPermit permit,
             PreparedCall call,
             StreamUsageTracker tracker,
             String missingUsageReason
     ) {
         tracker.finish();
         return tracker.usage() == null
-                ? finalizePending(lease, permit, missingUsageReason)
-                : finalizeSuccess(context, lease, permit, call, tracker.usage(), missingUsageReason);
+                ? finalizePending(lease, missingUsageReason)
+                : finalizeSuccess(context, lease, call, tracker.usage(), missingUsageReason);
     }
 
     private Mono<ModelGatewayResponse> handleBeforeResponseFailure(
@@ -360,7 +465,9 @@ public class ModelGatewayOrchestrator {
             ConcurrencyPermit permit
     ) {
         if (error instanceof ApiException) {
-            return cleanup(lease, permit, true).then(Mono.error(error));
+            return concurrencyLimiter.release(permit)
+                    .then(requestLeases.release(lease))
+                    .then(Mono.error(error));
         }
         Mono<Boolean> billingResult;
         if (error instanceof ProviderHttpException providerError && providerError.isDefinitiveRejection()) {
@@ -368,12 +475,29 @@ public class ModelGatewayOrchestrator {
         } else {
             billingResult = recovery.pending(lease.billingRequestId(), "供应商调用结果不确定，需要对账");
         }
+        return concurrencyLimiter.release(permit)
+                .then(finalizeAccounting(lease, billingResult))
+                .then(Mono.error(mapProviderError(error)));
+    }
+
+    private Mono<SelectedProvider> handleReservedFailure(Throwable error, RequestLease lease) {
+        Mono<Boolean> billingResult;
+        if (error instanceof ApiException) {
+            billingResult = recovery.release(lease.billingRequestId(), "模型路由在调用上游前不可用");
+        } else if (error instanceof ProviderHttpException providerError && providerError.isDefinitiveRejection()) {
+            billingResult = recovery.release(lease.billingRequestId(), "供应商明确拒绝请求，未开始模型调用");
+        } else {
+            billingResult = recovery.pending(lease.billingRequestId(), "全部上游路由调用结果不确定，需要对账");
+        }
         return billingResult
-                .flatMap(completed -> cleanup(lease, permit, completed))
+                .flatMap(completed -> completed ? requestLeases.release(lease) : Mono.empty())
                 .then(Mono.error(mapProviderError(error)));
     }
 
     private Throwable mapProviderError(Throwable error) {
+        if (error instanceof ApiException) {
+            return error;
+        }
         if (error instanceof ProviderHttpException providerError) {
             int status = providerError.getStatus().value();
             if (status == 429) {
@@ -400,25 +524,40 @@ public class ModelGatewayOrchestrator {
                 "无法连接模型供应商", error);
     }
 
-    private Mono<Boolean> finalizeOnce(AtomicBoolean finalized, Mono<Boolean> operation) {
-        return finalized.compareAndSet(false, true) ? operation : Mono.just(true);
-    }
-
-    private Mono<Void> cleanup(
+    private Mono<Boolean> releaseAndFinalizeOnce(
+            AtomicBoolean finalized,
             RequestLease lease,
             ConcurrencyPermit permit,
-            boolean releaseRequestLease
+            Supplier<Mono<Boolean>> operation
     ) {
-        Mono<Void> releaseConcurrency = concurrencyLimiter.release(permit);
-        return releaseRequestLease
-                ? Mono.whenDelayError(releaseConcurrency, requestLeases.release(lease)).onErrorResume(error -> Mono.empty())
-                : releaseConcurrency;
+        return concurrencyLimiter.release(permit)
+                .then(Mono.defer(() -> {
+                    if (!finalized.compareAndSet(false, true)) {
+                        return Mono.just(true);
+                    }
+                    Mono<Boolean> durable = Mono.defer(operation).cache();
+                    durable.subscribe(
+                            ignored -> { },
+                            error -> log.error(
+                                    "Stream accounting finalization failed billingRequestId={}",
+                                    lease.billingRequestId(), error
+                            )
+                    );
+                    return durable;
+                }));
+    }
+
+    private Mono<Boolean> finalizeAccounting(RequestLease lease, Mono<Boolean> billingResult) {
+        return billingResult.flatMap(completed -> completed
+                ? requestLeases.release(lease).thenReturn(true)
+                : Mono.just(false));
     }
 
     private HttpHeaders responseHeaders(
             HttpHeaders providerHeaders,
             GatewayRequestContext context,
             ResolvedModelConfig model,
+            ResolvedModelRoute route,
             boolean stream,
             boolean internalProtocol
     ) {
@@ -438,17 +577,35 @@ public class ModelGatewayOrchestrator {
         headers.set(AuthHeaders.REQUEST_ID, context.traceId());
         headers.set("X-Lumora-Pricing-Version", model.pricingVersion());
         headers.set("X-Lumora-Provider-Code", model.providerCode());
+        headers.set("X-Lumora-Route-Id", route.routeId());
+        headers.set("X-Lumora-Route-Name", route.routeName());
         headers.setCacheControl("no-store");
         return headers;
     }
 
     private record PreparedCall(
             ResolvedModelConfig model,
+            ResolvedModelRoute route,
             ObjectNode upstreamBody,
             String credential,
             PricingSnapshot pricing,
             BigDecimal maximumQuota,
             ProviderProtocol upstreamProtocol
+    ) {
+    }
+
+    private record PreparedModel(
+            ResolvedModelConfig model,
+            PricingSnapshot pricing,
+            BigDecimal maximumQuota,
+            List<ResolvedModelRoute> routes
+    ) {
+    }
+
+    private record SelectedProvider(
+            PreparedCall call,
+            ConcurrencyPermit permit,
+            ProviderCall provider
     ) {
     }
 }

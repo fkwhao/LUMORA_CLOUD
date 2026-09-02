@@ -52,7 +52,7 @@ public record ModelGatewayProperties(
 
     public record Concurrency(
             @Min(1) @Max(100) int perUser,
-            @Min(1) @Max(10_000) int perModel,
+            @Min(0) @Max(10_000) int perModel,
             @NotNull Duration leaseTtl,
             @NotNull Duration requestLeaseTtl
     ) {

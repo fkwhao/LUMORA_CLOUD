@@ -15,6 +15,9 @@ export interface ModelProvider {
   name: string;
   protocolType: string;
   baseUrl: string;
+  maxConcurrency?: number | null;
+  requestsPerMinute?: number | null;
+  tokensPerMinute?: number | null;
   credential: ProviderCredentialStatus;
   status: "ACTIVE" | "DISABLED";
   revision: number;
@@ -28,6 +31,19 @@ export interface CreateProviderInput {
   protocolType: string;
   baseUrl: string;
   apiKey: string;
+  maxConcurrency?: number;
+  requestsPerMinute?: number;
+  tokensPerMinute?: number;
+}
+
+export interface UpdateProviderInput {
+  name: string;
+  protocolType: string;
+  baseUrl: string;
+  maxConcurrency?: number;
+  requestsPerMinute?: number;
+  tokensPerMinute?: number;
+  status: ModelProvider["status"];
 }
 
 export interface ModelCapabilities {
@@ -112,6 +128,56 @@ export interface ModelVersion {
   publishedAt?: string;
   createdAt: string;
   updatedAt: string;
+  routes: ModelRoute[];
+}
+
+export interface ModelRoute {
+  id: string;
+  routeName: string;
+  providerId: number;
+  providerCode: string;
+  providerName: string;
+  protocolType: string;
+  baseUrl: string;
+  upstreamModel: string;
+  priority: number;
+  weight: number;
+  maxConcurrency?: number | null;
+  requestsPerMinute?: number | null;
+  tokensPerMinute?: number | null;
+  accountMaxConcurrency?: number | null;
+  accountRequestsPerMinute?: number | null;
+  accountTokensPerMinute?: number | null;
+  failoverEnabled: boolean;
+  circuitBreakerEnabled: boolean;
+  status: "ACTIVE" | "DISABLED";
+  primary: boolean;
+  costCurrency: string;
+  costRates: ModelRates;
+  costTimePricingPolicy?: CostTimePricingPolicy | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelRouteInput {
+  routeName: string;
+  providerId: number;
+  upstreamModel: string;
+  priority: number;
+  weight: number;
+  maxConcurrency?: number;
+  requestsPerMinute?: number;
+  tokensPerMinute?: number;
+  failoverEnabled: boolean;
+  circuitBreakerEnabled: boolean;
+  status: ModelRoute["status"];
+  costCurrency: string;
+  uncachedInputCostPerMillion: number;
+  cachedInputCostPerMillion: number;
+  cacheCreationInputCostPerMillion?: number;
+  outputCostPerMillion: number;
+  costTimePricingPolicy?: CostTimePricingPolicy;
 }
 
 export interface AdminModel {
@@ -179,6 +245,14 @@ export function createProvider(input: CreateProviderInput): Promise<ModelProvide
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+  });
+}
+
+export function updateProvider(provider: ModelProvider, input: UpdateProviderInput): Promise<ModelProvider> {
+  return apiFetch<ModelProvider>(`/api/admin/catalog/providers/${provider.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: provider.revision, ...input }),
   });
 }
 
@@ -255,4 +329,27 @@ export function updateModelStatus(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expectedRevision: model.revision, status }),
   });
+}
+
+export function createModelRoute(modelId: number, route: ModelRouteInput): Promise<ModelRoute> {
+  return apiFetch<ModelRoute>(`/api/admin/catalog/models/${modelId}/draft/routes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ route }),
+  });
+}
+
+export function updateModelRoute(modelId: number, current: ModelRoute, route: ModelRouteInput): Promise<ModelRoute> {
+  return apiFetch<ModelRoute>(`/api/admin/catalog/models/${modelId}/draft/routes/${current.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: current.revision, route }),
+  });
+}
+
+export function deleteModelRoute(modelId: number, route: ModelRoute): Promise<void> {
+  return apiFetch<void>(
+    `/api/admin/catalog/models/${modelId}/draft/routes/${route.id}?expectedRevision=${route.revision}`,
+    { method: "DELETE" },
+  );
 }

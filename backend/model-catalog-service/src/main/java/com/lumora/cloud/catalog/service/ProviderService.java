@@ -46,7 +46,8 @@ public class ProviderService {
         String credentialReference = credentialService.newReference();
         ProviderEntity entity = ProviderEntity.create(
                 code, request.name().trim(), inputMapper.protocolType(request.protocolType()),
-                inputMapper.baseUrl(request.baseUrl()), credentialReference
+                inputMapper.baseUrl(request.baseUrl()), credentialReference,
+                request.maxConcurrency(), request.requestsPerMinute(), request.tokensPerMinute()
         );
         try {
             providerMapper.insert(entity);
@@ -67,6 +68,7 @@ public class ProviderService {
         int updated = providerMapper.updateOptimistic(
                 providerId, request.expectedRevision(), request.name().trim(),
                 inputMapper.protocolType(request.protocolType()), inputMapper.baseUrl(request.baseUrl()),
+                request.maxConcurrency(), request.requestsPerMinute(), request.tokensPerMinute(),
                 status.name()
         );
         if (updated != 1) {
@@ -130,6 +132,7 @@ public class ProviderService {
     ) {
         return new ProviderResponse(
                 entity.getId(), entity.getCode(), entity.getName(), entity.getProtocolType(), entity.getBaseUrl(),
+                entity.getMaxConcurrency(), entity.getRequestsPerMinute(), entity.getTokensPerMinute(),
                 credential, entity.getStatus(), entity.getRevision(), entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );

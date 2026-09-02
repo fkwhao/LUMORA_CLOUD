@@ -63,7 +63,8 @@ Model Gateway 对外提供：
 - `POST /api/app/model/v1/responses`：以 OpenAI Responses 协议调用已发布模型。
 - `POST /api/app/model/v1/messages`：以 Anthropic Messages 协议调用已发布模型。
 - 客户端必须为每次逻辑调用提供稳定的 `X-Lumora-Client-Request-Id`；重试复用同一个值。
-- Model Gateway 使用请求租约阻止同一请求并发访问供应商，使用 Redis Lua 信号量限制用户和模型并发。
+- Model Gateway 使用请求租约阻止同一请求并发访问供应商，使用 Redis Lua 信号量限制用户、可选逻辑模型、
+  供应商账号和单路由并发，并对账号/路由 RPM、TPM 做分布式准入。
 - 请求先解析发布版本并预占最大额度，供应商终态 Usage 用于实际结算；拒绝类错误释放额度，未知结果
   进入待对账并由恢复任务幂等重试。
 - 新供应商的 API Key 由 Model Catalog 使用 AES-256-GCM 加密保存，数据库和管理端只暴露掩码、指纹与

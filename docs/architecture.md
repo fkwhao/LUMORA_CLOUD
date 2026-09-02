@@ -83,7 +83,8 @@ Billing Service 已完成套餐/版本及版本化模型范围、订单、开发
 订阅锚定的七天额度桶、预占/结算/释放、用量、待对账状态和不可变账本；待支付订单由 RabbitMQ TTL/死信
 队列及时触发过期，并由幂等条件更新和 MySQL 定时扫描兜底。Model Catalog Service 已完成供应商、模型草稿、不可变发布版本、启停、用户目录、
 内部解析、AES-GCM Provider 凭据管理和 Redis 发布快照。两者均已通过真实 Nacos/MySQL 集成测试，Model Catalog 还验证了 Redis
-缓存链路。Model Gateway 已经实现 LUMORA Internal Protocol v1 统一入口、模型解析、分布式并发控制、Billing 预占、Chat Completions、
+缓存链路。Model Gateway 已经实现 LUMORA Internal Protocol v1 统一入口、模型解析、逻辑模型多账号路由、
+优先级/权重负载均衡、账号与路由分布式容量控制、动态 Sentinel 熔断和 Billing 预占、Chat Completions、
 Responses 与 Anthropic Messages 上游适配、权威 Usage 结算和待对账补偿，并通过真实
 Nacos/Redis 联合测试。管理端运营总览已通过各领域只读统计接口展示真实用户、订单、收入、Usage 与
 模型资源数据。Billing 还已完成多币种钱包、MOCK 充值订单、管理员余额调整、不可变钱包流水及钱包套餐

@@ -8,6 +8,7 @@ import com.lumora.cloud.api.catalog.CatalogContracts.CostRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
+import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelRoute;
 import com.lumora.cloud.api.catalog.ProviderProtocol;
 import com.lumora.cloud.modelgateway.domain.GatewayProtocol;
 import com.lumora.cloud.modelgateway.concurrency.ConcurrencyPermit;
@@ -15,6 +16,7 @@ import com.lumora.cloud.modelgateway.concurrency.DistributedConcurrencyLimiter;
 import com.lumora.cloud.modelgateway.concurrency.RequestLease;
 import com.lumora.cloud.modelgateway.concurrency.RequestLeaseService;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
+import com.lumora.cloud.modelgateway.config.RouteProtectionProperties;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.provider.ModelProviderClient;
 import com.lumora.cloud.modelgateway.provider.ProviderUsageParser;
@@ -22,6 +24,9 @@ import com.lumora.cloud.modelgateway.provider.ProviderCall;
 import com.lumora.cloud.modelgateway.provider.ProviderCredentialResolver;
 import com.lumora.cloud.modelgateway.provider.ProviderHttpException;
 import com.lumora.cloud.modelgateway.recovery.BillingRecoveryService;
+import com.lumora.cloud.modelgateway.routing.RouteCircuitBreaker;
+import com.lumora.cloud.modelgateway.routing.DistributedRouteRateLimiter;
+import com.lumora.cloud.modelgateway.routing.UpstreamRouteSelector;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +45,8 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +56,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ModelGatewayOrchestratorTest {
@@ -60,6 +68,7 @@ class ModelGatewayOrchestratorTest {
     @Mock private BillingControlService billing;
     @Mock private BillingRecoveryService recovery;
     @Mock private ModelProviderClient providerClient;
+    @Mock private DistributedRouteRateLimiter routeRateLimiter;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RequestIds requestIds = new RequestIds();
@@ -77,16 +86,20 @@ class ModelGatewayOrchestratorTest {
         context = new GatewayRequestContext(42L, "session", "device", "DESKTOP", "trace", "client-12345678");
         orchestrator = new ModelGatewayOrchestrator(
                 new ChatRequestValidator(), modelCache, credentials, new QuotaCalculator(), requestIds,
-                requestLeases, concurrencyLimiter, billing, recovery, providerClient,
+                requestLeases, concurrencyLimiter, new UpstreamRouteSelector(),
+                new RouteCircuitBreaker(new RouteProtectionProperties()), routeRateLimiter,
+                billing, recovery, providerClient,
                 new ProviderUsageParser(), new LumoraProtocolAdapter(objectMapper, new ProviderUsageParser()),
                 objectMapper, properties()
         );
         when(requestLeases.acquire(context)).thenReturn(Mono.just(lease));
         when(requestLeases.release(any())).thenReturn(Mono.empty());
         when(modelCache.resolve("test-model")).thenReturn(Mono.just(model));
-        when(credentials.resolve("TEST_KEY")).thenReturn("secret");
-        when(concurrencyLimiter.acquire(42L, "test-model")).thenReturn(Mono.just(permit));
-        when(concurrencyLimiter.release(any())).thenReturn(Mono.empty());
+        lenient().when(credentials.resolve("TEST_KEY")).thenReturn("secret");
+        lenient().when(concurrencyLimiter.acquire(org.mockito.ArgumentMatchers.eq(42L),
+                org.mockito.ArgumentMatchers.eq("test-model"), any())).thenReturn(Mono.just(permit));
+        lenient().when(concurrencyLimiter.release(any())).thenReturn(Mono.empty());
+        lenient().when(routeRateLimiter.acquire(any(), org.mockito.ArgumentMatchers.anyLong())).thenReturn(Mono.empty());
         when(billing.reserve(any())).thenReturn(Mono.just(new ReservationResponse(
                 "reservation", "mgw-request", 42L, "test-model", "pricing-v1",
                 ReservationStatus.ACTIVE, amount("1"), null, amount("9"), Instant.now(), amount("1"), null,
@@ -190,6 +203,44 @@ class ModelGatewayOrchestratorTest {
     }
 
     @Test
+    void releasesConcurrencyBeforeAccountingWhenStreamingClientCancels() throws Exception {
+        List<String> lifecycle = new CopyOnWriteArrayList<>();
+        byte[] firstChunk = "data: {\"choices\":[{\"delta\":{\"content\":\"tool\"}}]}\n\n"
+                .getBytes(StandardCharsets.UTF_8);
+        when(providerClient.invoke(any(), any(), any(), anyBoolean(), any()))
+                .thenReturn(Mono.just(new ProviderCall(
+                        HttpStatus.OK, new HttpHeaders(),
+                        Flux.concat(
+                                Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(firstChunk)),
+                                Flux.never()
+                        )
+                )));
+        when(concurrencyLimiter.release(permit))
+                .thenReturn(Mono.fromRunnable(() -> lifecycle.add("concurrency-released")));
+        when(recovery.pending("mgw-request", "客户端取消流式响应，供应商计费状态待确认"))
+                .thenReturn(Mono.fromSupplier(() -> {
+                    lifecycle.add("accounting-started");
+                    return true;
+                }));
+
+        Flux<Integer> result = orchestrator.invoke(context, objectMapper.readTree("""
+                        {"model":"test-model","messages":[],"stream":true,"max_tokens":100}
+                        """), GatewayProtocol.OPENAI_COMPATIBLE)
+                .flatMapMany(call -> call.body().take(1))
+                .map(buffer -> {
+                    org.springframework.core.io.buffer.DataBufferUtils.release(buffer);
+                    return 1;
+                });
+
+        StepVerifier.create(result)
+                .expectNext(1)
+                .verifyComplete();
+
+        assertThat(lifecycle).containsExactly("concurrency-released", "accounting-started");
+        verify(requestLeases).release(lease);
+    }
+
+    @Test
     void neverCallsProviderForIdempotentReservationReplay() throws Exception {
         when(billing.reserve(any())).thenReturn(Mono.just(new ReservationResponse(
                 "reservation", "mgw-request", 42L, "test-model", "pricing-v1",
@@ -242,6 +293,46 @@ class ModelGatewayOrchestratorTest {
         verify(providerClient, times(2)).invoke(any(), any(), any(), anyBoolean(), any());
     }
 
+    @Test
+    void failsOverToNextPriorityRouteBeforeReturningResponse() throws Exception {
+        ResolvedModelRoute primary = route("route-a", "provider-a", "KEY_A", 10);
+        ResolvedModelRoute secondary = route("route-b", "provider-b", "KEY_B", 20);
+        ResolvedModelConfig routed = new ResolvedModelConfig(
+                model.modelCode(), model.displayName(), model.description(), model.pricingVersion(),
+                model.providerCode(), model.protocolType(), model.baseUrl(), model.credentialReference(),
+                model.upstreamModel(), model.capabilities(), model.costCurrency(), model.costRates(),
+                model.costTimePricingPolicy(), model.quotaRates(), model.quotaTimePricingPolicy(),
+                model.publishedAt(), List.of(primary, secondary)
+        );
+        when(modelCache.resolve("test-model")).thenReturn(Mono.just(routed));
+        when(credentials.resolve("KEY_A")).thenReturn("secret-a");
+        when(credentials.resolve("KEY_B")).thenReturn("secret-b");
+        byte[] response = """
+                {"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+                """.getBytes(StandardCharsets.UTF_8);
+        when(providerClient.invoke(any(), any(), any(), anyBoolean(), any()))
+                .thenReturn(Mono.error(new ProviderHttpException(HttpStatus.SERVICE_UNAVAILABLE)))
+                .thenReturn(Mono.just(new ProviderCall(
+                        HttpStatus.OK, new HttpHeaders(),
+                        Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(response))
+                )));
+        when(recovery.settle(any(), any())).thenReturn(Mono.just(true));
+
+        StepVerifier.create(orchestrator.invoke(context, objectMapper.readTree("""
+                        {"model":"test-model","messages":[]}
+                        """), GatewayProtocol.OPENAI_COMPATIBLE))
+                .assertNext(result -> {
+                    assertThat(result.headers().getFirst("X-Lumora-Provider-Code")).isEqualTo("provider-b");
+                    assertThat(result.headers().getFirst("X-Lumora-Route-Id")).isEqualTo("route-b");
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<ResolvedModelConfig> calledModels = ArgumentCaptor.forClass(ResolvedModelConfig.class);
+        verify(providerClient, times(2)).invoke(calledModels.capture(), any(), any(), anyBoolean(), any());
+        assertThat(calledModels.getAllValues()).extracting(ResolvedModelConfig::providerCode)
+                .containsExactly("provider-a", "provider-b");
+    }
+
     private ResolvedModelConfig model() {
         return new ResolvedModelConfig(
                 "test-model", "Test", null, "pricing-v1", "provider", "OPENAI_COMPATIBLE",
@@ -250,6 +341,15 @@ class ModelGatewayOrchestratorTest {
                 "USD", new CostRates(amount("1"), amount("1"), amount("1"), amount("2")), null,
                 new QuotaRates(amount("10"), amount("10"), amount("10"), amount("20"), amount("0.000001")),
                 null, Instant.now()
+        );
+    }
+
+    private ResolvedModelRoute route(String id, String providerCode, String credential, int priority) {
+        return new ResolvedModelRoute(
+                id, providerCode, (long) priority, providerCode, "OPENAI_COMPATIBLE",
+                "https://api.example.com/v1", credential, "upstream-model", priority, 100,
+                10, null, null, 20, null, null, true, true,
+                "USD", model.costRates(), null
         );
     }
 

@@ -7,13 +7,16 @@ import com.lumora.cloud.catalog.service.CatalogStatisticsService;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.AdminCatalogStatisticsResponse;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.AdminModelResponse;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CreateModelRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.CreateModelRouteRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CreateProviderRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.ModelVersionResponse;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.ModelRouteResponse;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.ProviderResponse;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.RotateProviderCredentialRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.PublishDraftRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateDraftRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelStatusRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelRouteRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateProviderRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -121,6 +124,37 @@ public class CatalogAdminController {
     ) {
         access.requireAdmin();
         return modelService.updateDraft(modelId, request);
+    }
+
+    @PostMapping("/models/{modelId}/draft/routes")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ModelRouteResponse createRoute(
+            @PathVariable Long modelId,
+            @Valid @RequestBody CreateModelRouteRequest request
+    ) {
+        access.requireAdmin();
+        return modelService.createRoute(modelId, request);
+    }
+
+    @PutMapping("/models/{modelId}/draft/routes/{routeId}")
+    public ModelRouteResponse updateRoute(
+            @PathVariable Long modelId,
+            @PathVariable String routeId,
+            @Valid @RequestBody UpdateModelRouteRequest request
+    ) {
+        access.requireAdmin();
+        return modelService.updateRoute(modelId, routeId, request);
+    }
+
+    @DeleteMapping("/models/{modelId}/draft/routes/{routeId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteRoute(
+            @PathVariable Long modelId,
+            @PathVariable String routeId,
+            @RequestParam long expectedRevision
+    ) {
+        access.requireAdmin();
+        modelService.deleteRoute(modelId, routeId, expectedRevision);
     }
 
     @DeleteMapping("/models/{modelId}/draft")

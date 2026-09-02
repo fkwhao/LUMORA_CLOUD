@@ -1,5 +1,5 @@
 import { Button, Card, Chip, Input, Label, ListBox, Select, TextField } from "@heroui/react";
-import { ArrowLeft, CheckCircle2, KeyRound, Plus, RefreshCw, RotateCcw, Server } from "lucide-react";
+import { ArrowLeft, CheckCircle2, KeyRound, Plus, RefreshCw, RotateCcw, Server, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { ApiClientError } from "../../api/auth";
@@ -7,6 +7,7 @@ import {
   createProvider,
   listProviders,
   rotateProviderCredential,
+  updateProvider,
   type ModelProvider,
 } from "../../api/catalog";
 
@@ -33,6 +34,7 @@ export function ModelProvidersPage() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [rotatingId, setRotatingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -66,10 +68,39 @@ export function ModelProvidersPage() {
         protocolType: String(form.get("protocolType") ?? "OPENAI_COMPATIBLE"),
         baseUrl: String(form.get("baseUrl") ?? ""),
         apiKey: String(form.get("apiKey") ?? ""),
+        maxConcurrency: optionalNumber(form, "maxConcurrency"),
+        requestsPerMinute: optionalNumber(form, "requestsPerMinute"),
+        tokensPerMinute: optionalNumber(form, "tokensPerMinute"),
       });
       setProviders((current) => [...current, created].sort((left, right) => left.id - right.id));
       formElement.reset();
       setNotice(`${created.name} 已创建，API Key 已加密保存。`);
+    } catch (reason) {
+      setError(message(reason));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function updateLimits(event: FormEvent<HTMLFormElement>, provider: ModelProvider) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await updateProvider(provider, {
+        name: provider.name,
+        protocolType: provider.protocolType,
+        baseUrl: provider.baseUrl,
+        status: provider.status,
+        maxConcurrency: optionalNumber(form, "maxConcurrency"),
+        requestsPerMinute: optionalNumber(form, "requestsPerMinute"),
+        tokensPerMinute: optionalNumber(form, "tokensPerMinute"),
+      });
+      setProviders((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setEditingId(null);
+      setNotice(`${updated.name} 的账号容量已更新。`);
     } catch (reason) {
       setError(message(reason));
     } finally {
@@ -102,9 +133,9 @@ export function ModelProvidersPage() {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="mb-1 text-sm text-muted">模型目录</p>
-          <h1 className="text-2xl font-semibold tracking-tight">模型供应商</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">供应商账号</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            API Key 由服务端加密保存。提交后仅显示掩码与指纹，原始值不会再次返回。
+            每条记录代表一个独立上游账号及其 API Key。同一模型可绑定多个账号路由并按权重分流。
           </p>
         </div>
         <div className="flex gap-2">
@@ -152,14 +183,14 @@ export function ModelProvidersPage() {
                     {provider.code} · {protocolLabel(provider.protocolType)}
                   </Card.Description>
                 </div>
-                <Button
-                  isDisabled={pending}
-                  onPress={() => setRotatingId((current) => current === provider.id ? null : provider.id)}
-                  size="sm"
-                  variant="secondary"
-                >
-                  <RotateCcw size={15} /> 轮换 Key
-                </Button>
+                <div className="flex gap-2">
+                  <Button isDisabled={pending} onPress={() => setEditingId((current) => current === provider.id ? null : provider.id)} size="sm" variant="tertiary">
+                    <SlidersHorizontal size={15} /> 容量
+                  </Button>
+                  <Button isDisabled={pending} onPress={() => setRotatingId((current) => current === provider.id ? null : provider.id)} size="sm" variant="secondary">
+                    <RotateCcw size={15} /> 轮换 Key
+                  </Button>
+                </div>
               </Card.Header>
               <Card.Content className="gap-4 pt-1">
                 <div className="grid gap-3 text-sm sm:grid-cols-2">
@@ -170,7 +201,25 @@ export function ModelProvidersPage() {
                   />
                   <Info label="Key 掩码" value={provider.credential.maskedValue} mono />
                   <Info label="指纹" value={provider.credential.fingerprint ?? "未提供"} mono />
+                  <Info label="账号总并发" value={capacity(provider.maxConcurrency, "不限")} />
+                  <Info label="账号 RPM / TPM" value={`${capacity(provider.requestsPerMinute, "不限")} / ${capacity(provider.tokensPerMinute, "不限")}`} />
                 </div>
+
+                {editingId === provider.id && (
+                  <form className="rounded-xl border border-border bg-default/30 p-4" onSubmit={(event) => void updateLimits(event, provider)}>
+                    <div className="mb-3 flex items-center gap-2 text-sm font-medium"><SlidersHorizontal size={16} /> 供应商账号容量</div>
+                    <p className="mb-4 text-xs leading-5 text-muted">留空表示平台不额外限制；应填写供应商为该账号实际授予的限制。</p>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <OptionalCapacityField defaultValue={provider.maxConcurrency} label="总并发" name="maxConcurrency" />
+                      <OptionalCapacityField defaultValue={provider.requestsPerMinute} label="RPM" name="requestsPerMinute" />
+                      <OptionalCapacityField defaultValue={provider.tokensPerMinute} label="TPM" name="tokensPerMinute" />
+                    </div>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button onPress={() => setEditingId(null)} size="sm" variant="tertiary">取消</Button>
+                      <Button isDisabled={pending} size="sm" type="submit" variant="primary">保存容量</Button>
+                    </div>
+                  </form>
+                )}
 
                 {rotatingId === provider.id && (
                   <form className="rounded-xl border border-border bg-default/30 p-4" onSubmit={(event) => void rotate(event, provider)}>
@@ -244,6 +293,11 @@ export function ModelProvidersPage() {
               <TextField fullWidth isRequired name="apiKey" type="password">
                 <Label>API Key</Label><Input fullWidth autoComplete="new-password" placeholder="提交后不再回显" />
               </TextField>
+              <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+                <OptionalCapacityField label="账号总并发" name="maxConcurrency" />
+                <OptionalCapacityField label="账号 RPM" name="requestsPerMinute" />
+                <OptionalCapacityField label="账号 TPM" name="tokensPerMinute" />
+              </div>
               <p className="flex gap-2 text-xs leading-5 text-muted"><CheckCircle2 className="mt-0.5 shrink-0" size={14} />密钥不会写入 Nacos、浏览器存储、模型发布快照或应用日志。</p>
               <Button fullWidth isDisabled={pending} type="submit" variant="primary">
                 {pending ? "正在保存…" : "创建供应商"}
@@ -254,6 +308,24 @@ export function ModelProvidersPage() {
       </section>
     </div>
   );
+}
+
+function OptionalCapacityField({ name, label, defaultValue }: { name: string; label: string; defaultValue?: number | null }) {
+  return (
+    <TextField fullWidth name={name} type="number">
+      <Label>{label}（可选）</Label>
+      <Input defaultValue={defaultValue ?? ""} fullWidth min="1" placeholder="不限" />
+    </TextField>
+  );
+}
+
+function optionalNumber(form: FormData, name: string): number | undefined {
+  const value = String(form.get(name) ?? "").trim();
+  return value ? Number(value) : undefined;
+}
+
+function capacity(value: number | null | undefined, fallback: string): string {
+  return value == null ? fallback : new Intl.NumberFormat("zh-CN").format(value);
 }
 
 function Info({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {

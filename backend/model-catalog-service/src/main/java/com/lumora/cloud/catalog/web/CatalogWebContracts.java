@@ -5,6 +5,7 @@ import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -26,8 +27,14 @@ public final class CatalogWebContracts {
             @NotBlank @Size(max = 120) String name,
             @NotBlank @Pattern(regexp = "[A-Z][A-Z0-9_]{1,31}") String protocolType,
             @NotBlank @Size(max = 500) String baseUrl,
-            @NotBlank @Size(max = 8192) String apiKey
+            @NotBlank @Size(max = 8192) String apiKey,
+            @Min(1) @Max(1_000_000) Integer maxConcurrency,
+            @Min(1) @Max(10_000_000) Integer requestsPerMinute,
+            @Min(1) Long tokensPerMinute
     ) {
+        public CreateProviderRequest(String code, String name, String protocolType, String baseUrl, String apiKey) {
+            this(code, name, protocolType, baseUrl, apiKey, null, null, null);
+        }
     }
 
     public record UpdateProviderRequest(
@@ -35,8 +42,16 @@ public final class CatalogWebContracts {
             @NotBlank @Size(max = 120) String name,
             @NotBlank @Pattern(regexp = "[A-Z][A-Z0-9_]{1,31}") String protocolType,
             @NotBlank @Size(max = 500) String baseUrl,
+            @Min(1) @Max(1_000_000) Integer maxConcurrency,
+            @Min(1) @Max(10_000_000) Integer requestsPerMinute,
+            @Min(1) Long tokensPerMinute,
             @NotBlank @Pattern(regexp = "ACTIVE|DISABLED") String status
     ) {
+        public UpdateProviderRequest(
+                long expectedRevision, String name, String protocolType, String baseUrl, String status
+        ) {
+            this(expectedRevision, name, protocolType, baseUrl, null, null, null, status);
+        }
     }
 
     public record RotateProviderCredentialRequest(
@@ -61,6 +76,9 @@ public final class CatalogWebContracts {
             String name,
             String protocolType,
             String baseUrl,
+            Integer maxConcurrency,
+            Integer requestsPerMinute,
+            Long tokensPerMinute,
             ProviderCredentialStatusResponse credential,
             String status,
             long revision,
@@ -189,6 +207,70 @@ public final class CatalogWebContracts {
             QuotaRates quotaRates,
             QuotaTimePricingPolicy quotaTimePricingPolicy,
             Instant publishedAt,
+            Instant createdAt,
+            Instant updatedAt,
+            List<ModelRouteResponse> routes
+    ) {
+        public ModelVersionResponse {
+            routes = routes == null ? List.of() : List.copyOf(routes);
+        }
+    }
+
+    public record ModelRouteInput(
+            @NotBlank @Size(max = 120) String routeName,
+            @NotNull @Min(1) Long providerId,
+            @NotBlank @Size(max = 160) String upstreamModel,
+            @Min(0) @Max(10_000) int priority,
+            @Min(1) @Max(10_000) int weight,
+            @Min(1) @Max(1_000_000) Integer maxConcurrency,
+            @Min(1) @Max(10_000_000) Integer requestsPerMinute,
+            @Min(1) Long tokensPerMinute,
+            boolean failoverEnabled,
+            boolean circuitBreakerEnabled,
+            @NotBlank @Pattern(regexp = "ACTIVE|DISABLED") String status,
+            @NotBlank @Pattern(regexp = "[A-Z]{3}") String costCurrency,
+            @NotNull @DecimalMin("0") BigDecimal uncachedInputCostPerMillion,
+            @NotNull @DecimalMin("0") BigDecimal cachedInputCostPerMillion,
+            @DecimalMin("0") BigDecimal cacheCreationInputCostPerMillion,
+            @NotNull @DecimalMin("0") BigDecimal outputCostPerMillion,
+            @Valid CostTimePricingPolicyInput costTimePricingPolicy
+    ) {
+    }
+
+    public record CreateModelRouteRequest(@NotNull @Valid ModelRouteInput route) {
+    }
+
+    public record UpdateModelRouteRequest(
+            @Min(0) long expectedRevision,
+            @NotNull @Valid ModelRouteInput route
+    ) {
+    }
+
+    public record ModelRouteResponse(
+            String id,
+            String routeName,
+            Long providerId,
+            String providerCode,
+            String providerName,
+            String protocolType,
+            String baseUrl,
+            String upstreamModel,
+            int priority,
+            int weight,
+            Integer maxConcurrency,
+            Integer requestsPerMinute,
+            Long tokensPerMinute,
+            Integer accountMaxConcurrency,
+            Integer accountRequestsPerMinute,
+            Long accountTokensPerMinute,
+            boolean failoverEnabled,
+            boolean circuitBreakerEnabled,
+            String status,
+            boolean primary,
+            String costCurrency,
+            CostRates costRates,
+            CostTimePricingPolicy costTimePricingPolicy,
+            long revision,
             Instant createdAt,
             Instant updatedAt
     ) {

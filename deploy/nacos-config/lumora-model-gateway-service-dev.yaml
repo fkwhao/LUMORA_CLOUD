@@ -17,7 +17,8 @@ lumora:
       maximum-size: 1000
     concurrency:
       per-user: 3
-      per-model: 100
+      # 0 表示不额外设置逻辑模型总并发；容量主要由账号和路由配置决定。
+      per-model: 0
       lease-ttl: PT5M
       request-lease-ttl: PT10M
     provider:
@@ -34,6 +35,11 @@ lumora:
       retention: P7D
       scan-interval: PT10S
       batch-size: 100
+    route-protection:
+      failure-ratio: 0.5
+      minimum-calls: 10
+      statistical-window-seconds: 30
+      open-duration-seconds: 10
     diagnostics:
       retention: P7D
       summary-window: PT24H

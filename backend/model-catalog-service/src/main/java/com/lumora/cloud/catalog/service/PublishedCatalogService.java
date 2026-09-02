@@ -23,15 +23,18 @@ public class PublishedCatalogService {
     private final CatalogQueryMapper queryMapper;
     private final PublishedCatalogCache cache;
     private final TimePricingPolicyService timePricingPolicyService;
+    private final ModelRouteService routeService;
 
     public PublishedCatalogService(
             CatalogQueryMapper queryMapper,
             PublishedCatalogCache cache,
-            TimePricingPolicyService timePricingPolicyService
+            TimePricingPolicyService timePricingPolicyService,
+            ModelRouteService routeService
     ) {
         this.queryMapper = queryMapper;
         this.cache = cache;
         this.timePricingPolicyService = timePricingPolicyService;
+        this.routeService = routeService;
     }
 
     @Transactional(readOnly = true)
@@ -62,7 +65,9 @@ public class PublishedCatalogService {
     }
 
     private ResolvedModelConfig resolved(ModelVersionEntity entity) {
-        return new ResolvedModelConfig(
+        List<com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelRoute> routes =
+                routeService.resolvedRoutes(entity.getId());
+        ResolvedModelConfig model = new ResolvedModelConfig(
                 entity.getModelCode(), entity.getDisplayName(), entity.getDescription(), entity.getVersionKey(),
                 entity.getProviderCode(), entity.getProtocolType(), entity.getBaseUrl(),
                 entity.getActiveCredentialReference(), entity.getUpstreamModel(), new ModelCapabilities(
@@ -76,8 +81,9 @@ public class PublishedCatalogService {
                         entity.getInputQuotaPerMillion(), entity.getCacheReadQuotaPerMillion(),
                         entity.getCacheWriteQuotaPerMillion(), entity.getOutputQuotaPerMillion(),
                         entity.getMinimumRequestQuota()
-                ), timePricingPolicyService.resolvedQuotaPolicy(entity), entity.getPublishedAt()
+                ), timePricingPolicyService.resolvedQuotaPolicy(entity), entity.getPublishedAt(), routes
         );
+        return routes.isEmpty() ? model : model.withRoute(routes.getFirst());
     }
 
     private PublicModelResponse publicResponse(ResolvedModelConfig model) {

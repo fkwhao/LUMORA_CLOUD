@@ -63,6 +63,8 @@ class RedisConcurrencyIntegrationTest {
 
     @Test
     void sharesIdempotencyAndConcurrencyLimitsThroughRedis() {
+        String userConcurrencyKey = "lumora:model-gateway:concurrency:user:" + userId;
+        String modelConcurrencyKey = "lumora:model-gateway:concurrency:model:" + modelCode;
         GatewayRequestContext context = new GatewayRequestContext(
                 userId, "session", "device", "DESKTOP", "trace", clientRequestId
         );
@@ -79,6 +81,13 @@ class RedisConcurrencyIntegrationTest {
         ConcurrencyPermit second = limiter.acquire(userId, modelCode).block();
         assertThat(first).isNotNull();
         assertThat(second).isNotNull();
+        assertThat(first.keys()).containsExactly(userConcurrencyKey, modelConcurrencyKey);
+        assertThat(redis.opsForZSet().size(userConcurrencyKey).block()).isEqualTo(2L);
+        assertThat(redis.opsForZSet().size(modelConcurrencyKey).block()).isEqualTo(2L);
+        assertThat(redis.opsForZSet().range(
+                userConcurrencyKey, org.springframework.data.domain.Range.unbounded()
+        ).collectList().block())
+                .containsExactlyInAnyOrder(first.leaseId(), second.leaseId());
         StepVerifier.create(limiter.acquire(userId, modelCode))
                 .expectErrorSatisfies(error -> {
                     assertThat(error).isInstanceOf(ApiException.class);
@@ -87,6 +96,8 @@ class RedisConcurrencyIntegrationTest {
                 .verify();
 
         limiter.release(first).block();
+        assertThat(redis.opsForZSet().size(userConcurrencyKey).block()).isEqualTo(1L);
+        assertThat(redis.opsForZSet().size(modelConcurrencyKey).block()).isEqualTo(1L);
         assertThat(limiter.acquire(userId, modelCode).block()).isNotNull();
         requestLeases.release(requestLease).block();
         assertThat(requestLeases.acquire(context).block()).isNotNull();

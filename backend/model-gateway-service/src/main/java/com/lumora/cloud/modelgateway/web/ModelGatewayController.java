@@ -87,30 +87,35 @@ public class ModelGatewayController {
                             .then(orchestrator.invoke(context, request, protocol))
                             .map(response -> {
                                 String providerCode = response.headers().getFirst("X-Lumora-Provider-Code");
+                                String routeId = response.headers().getFirst("X-Lumora-Route-Id");
+                                String routeName = response.headers().getFirst("X-Lumora-Route-Name");
                                 AtomicBoolean completed = new AtomicBoolean();
                                 Flux<org.springframework.core.io.buffer.DataBuffer> tracked = response.body()
                                         .doOnComplete(() -> completeOnce(
                                                 completed,
                                                 diagnostics.succeeded(
-                                                        context.traceId(), providerCode, response.status().value()
+                                                        context.traceId(), providerCode, routeId, routeName,
+                                                        response.status().value()
                                                 )
                                         ))
                                         .doOnError(error -> completeOnce(
                                                 completed,
                                                 diagnostics.failed(
-                                                        context.traceId(), providerCode,
+                                                        context.traceId(), providerCode, routeId, routeName,
                                                         response.status().value(), errorCode(error)
                                                 )
                                         ))
                                         .doOnCancel(() -> completeOnce(
-                                                completed, diagnostics.canceled(context.traceId(), providerCode)
+                                                completed, diagnostics.canceled(
+                                                        context.traceId(), providerCode, routeId, routeName
+                                                )
                                         ));
                                 return ResponseEntity.status(response.status())
                                         .headers(response.headers())
                                         .body(tracked);
                             })
                             .onErrorResume(error -> diagnostics.failed(
-                                            context.traceId(), "", null, errorCode(error)
+                                            context.traceId(), "", "", "", null, errorCode(error)
                                     )
                                     .then(Mono.error(error)));
                 });

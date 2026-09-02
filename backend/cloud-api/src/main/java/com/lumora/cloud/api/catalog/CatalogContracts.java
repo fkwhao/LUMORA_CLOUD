@@ -98,7 +98,69 @@ public final class CatalogContracts {
             CostTimePricingPolicy costTimePricingPolicy,
             QuotaRates quotaRates,
             QuotaTimePricingPolicy quotaTimePricingPolicy,
-            Instant publishedAt
+            Instant publishedAt,
+            List<ResolvedModelRoute> routes
+    ) {
+        public ResolvedModelConfig {
+            routes = routes == null ? List.of() : List.copyOf(routes);
+        }
+
+        public ResolvedModelConfig(
+                String modelCode,
+                String displayName,
+                String description,
+                String pricingVersion,
+                String providerCode,
+                String protocolType,
+                String baseUrl,
+                String credentialReference,
+                String upstreamModel,
+                ModelCapabilities capabilities,
+                String costCurrency,
+                CostRates costRates,
+                CostTimePricingPolicy costTimePricingPolicy,
+                QuotaRates quotaRates,
+                QuotaTimePricingPolicy quotaTimePricingPolicy,
+                Instant publishedAt
+        ) {
+            this(modelCode, displayName, description, pricingVersion, providerCode, protocolType,
+                    baseUrl, credentialReference, upstreamModel, capabilities, costCurrency, costRates,
+                    costTimePricingPolicy, quotaRates, quotaTimePricingPolicy, publishedAt, List.of());
+        }
+
+        public ResolvedModelConfig withRoute(ResolvedModelRoute route) {
+            return new ResolvedModelConfig(
+                    modelCode, displayName, description, pricingVersion,
+                    route.providerCode(), route.protocolType(), route.baseUrl(),
+                    route.credentialReference(), route.upstreamModel(), capabilities,
+                    route.costCurrency(), route.costRates(), route.costTimePricingPolicy(),
+                    quotaRates, quotaTimePricingPolicy, publishedAt, routes
+            );
+        }
+    }
+
+    public record ResolvedModelRoute(
+            String routeId,
+            String routeName,
+            Long providerId,
+            String providerCode,
+            String protocolType,
+            String baseUrl,
+            String credentialReference,
+            String upstreamModel,
+            int priority,
+            int weight,
+            Integer maxConcurrency,
+            Integer requestsPerMinute,
+            Long tokensPerMinute,
+            Integer accountMaxConcurrency,
+            Integer accountRequestsPerMinute,
+            Long accountTokensPerMinute,
+            boolean failoverEnabled,
+            boolean circuitBreakerEnabled,
+            String costCurrency,
+            CostRates costRates,
+            CostTimePricingPolicy costTimePricingPolicy
     ) {
     }
 

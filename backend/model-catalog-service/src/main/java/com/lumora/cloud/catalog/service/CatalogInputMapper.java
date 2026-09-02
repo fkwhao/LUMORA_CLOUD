@@ -66,7 +66,7 @@ public class CatalogInputMapper {
         return values;
     }
 
-    private CostTimePricingPolicyValues costTimePricingPolicy(CostTimePricingPolicyInput input) {
+    public CostTimePricingPolicyValues costTimePricingPolicy(CostTimePricingPolicyInput input) {
         if (input == null) {
             return null;
         }
@@ -192,7 +192,7 @@ public class CatalogInputMapper {
         };
     }
 
-    private CostRatesValues costRates(CostRateInput input, String field) {
+    public CostRatesValues costRates(CostRateInput input, String field) {
         return new CostRatesValues(
                 CatalogAmounts.nonNegative(input.uncachedInputPerMillion(), field + ".uncachedInputPerMillion"),
                 CatalogAmounts.nonNegative(input.outputPerMillion(), field + ".outputPerMillion"),

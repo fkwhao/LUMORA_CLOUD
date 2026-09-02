@@ -17,6 +17,9 @@ public class ProviderEntity {
     private String protocolType;
     private String baseUrl;
     private String credentialReference;
+    private Integer maxConcurrency;
+    private Integer requestsPerMinute;
+    private Long tokensPerMinute;
     private String status;
     private Long revision;
     private Instant createdAt;
@@ -30,7 +33,10 @@ public class ProviderEntity {
             String name,
             String protocolType,
             String baseUrl,
-            String credentialReference
+            String credentialReference,
+            Integer maxConcurrency,
+            Integer requestsPerMinute,
+            Long tokensPerMinute
     ) {
         ProviderEntity entity = new ProviderEntity();
         entity.code = code;
@@ -38,6 +44,9 @@ public class ProviderEntity {
         entity.protocolType = protocolType;
         entity.baseUrl = baseUrl;
         entity.credentialReference = credentialReference;
+        entity.maxConcurrency = maxConcurrency;
+        entity.requestsPerMinute = requestsPerMinute;
+        entity.tokensPerMinute = tokensPerMinute;
         entity.status = ProviderStatus.ACTIVE.name();
         entity.revision = 0L;
         return entity;
@@ -49,6 +58,9 @@ public class ProviderEntity {
     public String getProtocolType() { return protocolType; }
     public String getBaseUrl() { return baseUrl; }
     public String getCredentialReference() { return credentialReference; }
+    public Integer getMaxConcurrency() { return maxConcurrency; }
+    public Integer getRequestsPerMinute() { return requestsPerMinute; }
+    public Long getTokensPerMinute() { return tokensPerMinute; }
     public String getStatus() { return status; }
     public Long getRevision() { return revision; }
     public Instant getCreatedAt() { return createdAt; }

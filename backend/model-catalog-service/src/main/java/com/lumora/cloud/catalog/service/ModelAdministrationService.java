@@ -15,10 +15,13 @@ import com.lumora.cloud.catalog.persistence.mapper.ProviderMapper;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.AdminModelResponse;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CostRates;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CreateModelRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.CreateModelRouteRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.ModelRouteResponse;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.ModelVersionResponse;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.PublishDraftRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateDraftRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelStatusRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelRouteRequest;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -38,6 +41,7 @@ public class ModelAdministrationService {
     private final ProviderService providerService;
     private final CatalogInputMapper inputMapper;
     private final TimePricingPolicyService timePricingPolicyService;
+    private final ModelRouteService routeService;
     private final PublishedCatalogCache cache;
 
     public ModelAdministrationService(
@@ -47,6 +51,7 @@ public class ModelAdministrationService {
             ProviderService providerService,
             CatalogInputMapper inputMapper,
             TimePricingPolicyService timePricingPolicyService,
+            ModelRouteService routeService,
             PublishedCatalogCache cache
     ) {
         this.modelMapper = modelMapper;
@@ -55,6 +60,7 @@ public class ModelAdministrationService {
         this.providerService = providerService;
         this.inputMapper = inputMapper;
         this.timePricingPolicyService = timePricingPolicyService;
+        this.routeService = routeService;
         this.cache = cache;
     }
 
@@ -80,6 +86,7 @@ public class ModelAdministrationService {
         timePricingPolicyService.replace(
                 draft.getId(), values.costTimePricingPolicy(), values.quotaTimePricingPolicy()
         );
+        routeService.createPrimary(draft, provider, values);
         return response(modelMapper.selectById(model.getId()), draft, null);
     }
 
@@ -103,6 +110,7 @@ public class ModelAdministrationService {
             throw new ApiException(HttpStatus.CONFLICT, "MODEL_DRAFT_CONFLICT", "草稿已被其他操作创建");
         }
         timePricingPolicyService.copy(published.getId(), draft.getId());
+        routeService.copy(published.getId(), draft.getId());
         modelMapper.touch(modelId);
         return response(modelMapper.selectById(modelId), draft, published);
     }
@@ -124,6 +132,7 @@ public class ModelAdministrationService {
         timePricingPolicyService.replace(
                 draft.getId(), values.costTimePricingPolicy(), values.quotaTimePricingPolicy()
         );
+        routeService.syncPrimary(draft, provider, values);
         modelMapper.touch(modelId);
         return response(
                 modelMapper.selectById(modelId), versionMapper.findDraft(modelId), versionMapper.findPublished(modelId)
@@ -170,6 +179,7 @@ public class ModelAdministrationService {
                     "供应商协议或 API 地址已变更，请先重新保存草稿再发布");
         }
         validateHostedWebSearch(provider, draft.getSupportsWebSearch());
+        routeService.validateForPublish(draft);
         versionMapper.findPublishedForUpdate(modelId);
         versionMapper.archivePublished(modelId);
         if (versionMapper.publishDraft(draft.getId(), request.expectedRevision(), Instant.now()) != 1) {
@@ -214,6 +224,32 @@ public class ModelAdministrationService {
         return versionMapper.findAllByModelId(modelId).stream()
                 .map(this::version)
                 .toList();
+    }
+
+    @Transactional
+    public ModelRouteResponse createRoute(Long modelId, CreateModelRouteRequest request) {
+        requireModelForUpdate(modelId);
+        ModelVersionEntity draft = requireDraftForUpdate(modelId);
+        ModelRouteResponse route = routeService.createSecondary(draft, request.route());
+        modelMapper.touch(modelId);
+        return route;
+    }
+
+    @Transactional
+    public ModelRouteResponse updateRoute(Long modelId, String routeId, UpdateModelRouteRequest request) {
+        requireModelForUpdate(modelId);
+        ModelVersionEntity draft = requireDraftForUpdate(modelId);
+        ModelRouteResponse route = routeService.update(draft, routeId, request.expectedRevision(), request.route());
+        modelMapper.touch(modelId);
+        return route;
+    }
+
+    @Transactional
+    public void deleteRoute(Long modelId, String routeId, long expectedRevision) {
+        requireModelForUpdate(modelId);
+        ModelVersionEntity draft = requireDraftForUpdate(modelId);
+        routeService.delete(draft, routeId, expectedRevision);
+        modelMapper.touch(modelId);
     }
 
     private ModelDefinitionEntity requireModelForUpdate(Long modelId) {
@@ -263,7 +299,7 @@ public class ModelAdministrationService {
                         entity.getCacheWriteQuotaPerMillion(), entity.getOutputQuotaPerMillion(),
                         entity.getMinimumRequestQuota()
                 ), timePricingPolicyService.adminQuotaPolicy(entity), entity.getPublishedAt(),
-                entity.getCreatedAt(), entity.getUpdatedAt()
+                entity.getCreatedAt(), entity.getUpdatedAt(), routeService.adminRoutes(entity.getId())
         );
     }
 

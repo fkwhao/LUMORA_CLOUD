@@ -6,6 +6,8 @@ export interface GatewayDiagnosticRecord {
   userId: number;
   modelCode: string;
   providerCode: string;
+  routeId?: string;
+  routeName?: string;
   protocol: string;
   stream: boolean;
   status: "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELED";

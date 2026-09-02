@@ -41,7 +41,7 @@ public class GatewayDiagnosticsStore {
         Instant now = Instant.now();
         GatewayDiagnosticRecord record = new GatewayDiagnosticRecord(
                 context.traceId(), context.clientRequestId(), context.userId(), modelCode,
-                "", protocol, stream, "RUNNING", null, null, 0L, now, null
+                "", "", "", protocol, stream, "RUNNING", null, null, 0L, now, null
         );
         return write(record)
                 .then(redis.opsForZSet().add(INDEX, record.traceId(), now.toEpochMilli()))
@@ -49,16 +49,28 @@ public class GatewayDiagnosticsStore {
                 .onErrorResume(error -> ignoredWriteFailure("start", context.traceId(), error));
     }
 
+    public Mono<Void> succeeded(String traceId, String providerCode, String routeId, String routeName, int upstreamStatus) {
+        return complete(traceId, providerCode, routeId, routeName, "SUCCEEDED", upstreamStatus, null);
+    }
+
     public Mono<Void> succeeded(String traceId, String providerCode, int upstreamStatus) {
-        return complete(traceId, providerCode, "SUCCEEDED", upstreamStatus, null);
+        return succeeded(traceId, providerCode, "", "", upstreamStatus);
+    }
+
+    public Mono<Void> failed(String traceId, String providerCode, String routeId, String routeName, Integer upstreamStatus, String errorCode) {
+        return complete(traceId, providerCode, routeId, routeName, "FAILED", upstreamStatus, errorCode);
     }
 
     public Mono<Void> failed(String traceId, String providerCode, Integer upstreamStatus, String errorCode) {
-        return complete(traceId, providerCode, "FAILED", upstreamStatus, errorCode);
+        return failed(traceId, providerCode, "", "", upstreamStatus, errorCode);
+    }
+
+    public Mono<Void> canceled(String traceId, String providerCode, String routeId, String routeName) {
+        return complete(traceId, providerCode, routeId, routeName, "CANCELED", null, "CLIENT_CANCELED");
     }
 
     public Mono<Void> canceled(String traceId, String providerCode) {
-        return complete(traceId, providerCode, "CANCELED", null, "CLIENT_CANCELED");
+        return canceled(traceId, providerCode, "", "");
     }
 
     public Flux<GatewayDiagnosticRecord> recent(int limit) {
@@ -77,11 +89,12 @@ public class GatewayDiagnosticsStore {
     }
 
     private Mono<Void> complete(
-            String traceId, String providerCode, String status, Integer upstreamStatus, String errorCode
+            String traceId, String providerCode, String routeId, String routeName,
+            String status, Integer upstreamStatus, String errorCode
     ) {
         return load(traceId)
                 .flatMap(record -> write(record.withCompletion(
-                        providerCode, status, upstreamStatus, errorCode, Instant.now()
+                        providerCode, routeId, routeName, status, upstreamStatus, errorCode, Instant.now()
                 )))
                 .onErrorResume(error -> ignoredWriteFailure("complete", traceId, error));
     }

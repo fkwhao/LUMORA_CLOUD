@@ -31,6 +31,7 @@ import {
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { ApiClientError } from "../../api/auth";
+import { ModelRoutePool } from "../../components/catalog/ModelRoutePool";
 import {
   createModel,
   createModelDraft,
@@ -356,17 +357,29 @@ export function ModelCatalogPage() {
           ))}
         </div>
 
-        <ModelEditor
-          key={selectedModel
-            ? `${selectedModel.modelId}:${selectedModel.draft?.id}:${selectedModel.draft?.revision}`
-            : `new:${newFormVersion}`}
-          model={selectedModel}
-          pending={pending !== null}
-          providers={editorProviders}
-          onCancel={selectedModel ? beginCreate : undefined}
-          onDiscard={selectedModel?.draft ? () => void discardDraft(selectedModel) : undefined}
-          onSubmit={save}
-        />
+        <div className="min-w-0 space-y-6">
+          <ModelEditor
+            key={selectedModel
+              ? `${selectedModel.modelId}:${selectedModel.draft?.id}:${selectedModel.draft?.revision}`
+              : `new:${newFormVersion}`}
+            model={selectedModel}
+            pending={pending !== null}
+            providers={editorProviders}
+            onCancel={selectedModel ? beginCreate : undefined}
+            onDiscard={selectedModel?.draft ? () => void discardDraft(selectedModel) : undefined}
+            onSubmit={save}
+          />
+          {selectedModel?.draft && (
+            <ModelRoutePool
+              model={selectedModel}
+              providers={providers}
+              onChanged={async () => {
+                await load();
+                setNotice("上游路由池已更新；发布草稿后生效。");
+              }}
+            />
+          )}
+        </div>
       </section>
     </div>
   );
@@ -584,7 +597,7 @@ function ModelEditor({
   }
 
   return (
-    <Card className="xl:sticky xl:top-24" variant="default">
+    <Card variant="default">
       <Card.Header>
         <span className="grid size-9 place-items-center rounded-xl bg-default text-muted">
           {model ? <PencilLine size={18} /> : <Plus size={18} />}
@@ -1332,6 +1345,30 @@ function VersionDetails({ version, modelCode, provider }: {
         />
         <VersionInfo label="单次最低额度" value={`${formatDecimal(version.quotaRates.minimumRequestQuota)} Credits`} />
         <QuotaTimePolicySnapshot policy={version.quotaTimePricingPolicy} />
+      </VersionDetailSection>
+
+      <VersionDetailSection title={`上游路由池（${version.routes?.length ?? 0}）`}>
+        {!version.routes?.length ? (
+          <p className="rounded-lg bg-default/40 px-3 py-2.5 text-xs text-muted">该旧版本没有独立路由快照，将使用兼容默认路由。</p>
+        ) : version.routes.map((route) => (
+          <div className="space-y-3 rounded-lg border border-border p-3" key={route.id}>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium">{route.routeName}</p>
+              {route.primary && <Chip color="accent" size="sm" variant="soft">默认</Chip>}
+              <Chip color={route.status === "ACTIVE" ? "success" : "default"} size="sm" variant="soft">{route.status === "ACTIVE" ? "启用" : "停用"}</Chip>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <VersionInfo label="供应商账号" value={route.providerName ?? route.providerCode} />
+              <VersionInfo label="上游模型 ID" mono value={route.upstreamModel} />
+              <VersionInfo label="协议" value={protocolLabel(route.protocolType)} />
+              <VersionInfo label="优先级 / 权重" value={`${route.priority} / ${route.weight}`} />
+              <VersionInfo label="路由并发" value={route.maxConcurrency == null ? "不限" : formatInteger(route.maxConcurrency)} />
+              <VersionInfo label="账号并发" value={route.accountMaxConcurrency == null ? "不限" : formatInteger(route.accountMaxConcurrency)} />
+            </div>
+            <RateGrid cacheCreation={route.costRates.cacheCreationInputPerMillion} cached={route.costRates.cachedInputPerMillion} output={route.costRates.outputPerMillion} suffix={`${route.costCurrency} / 百万 Token`} uncached={route.costRates.uncachedInputPerMillion} />
+            <CostTimePolicySnapshot currency={route.costCurrency} policy={route.costTimePricingPolicy} />
+          </div>
+        ))}
       </VersionDetailSection>
 
       <VersionDetailSection title="版本元数据">

@@ -15,12 +15,14 @@ import com.lumora.cloud.catalog.web.CatalogWebContracts.CostRateInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CostTimePricingPolicyInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.CostTimePricingRuleInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.ModelVersionInput;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.ModelRouteInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.PublishDraftRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.QuotaTimePricingPolicyInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.QuotaTimePricingRuleInput;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.RotateProviderCredentialRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateDraftRequest;
 import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelStatusRequest;
+import com.lumora.cloud.catalog.web.CatalogWebContracts.UpdateModelRouteRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -116,6 +118,13 @@ class ModelCatalogMySqlRedisIntegrationTest {
                 .isEqualByComparingTo("0.000000");
         assertThat(created.draft().quotaTimePricingPolicy().zoneId()).isEqualTo("Asia/Shanghai");
         assertThat(created.draft().quotaTimePricingPolicy().rules()).hasSize(2);
+        assertThat(created.draft().routes()).singleElement().satisfies(route -> {
+            assertThat(route.primary()).isTrue();
+            assertThat(route.providerId()).isEqualTo(provider.id());
+            assertThat(route.upstreamModel()).isEqualTo("upstream-test");
+            assertThat(route.priority()).isEqualTo(100);
+            assertThat(route.weight()).isEqualTo(100);
+        });
 
         var firstPublished = modelService.publishDraft(
                 created.modelId(), new PublishDraftRequest(created.draft().revision())
@@ -127,9 +136,14 @@ class ModelCatalogMySqlRedisIntegrationTest {
                 .usingRecursiveComparison()
                 .ignoringFields(
                         "id", "pricingVersion", "versionNo", "status", "revision",
-                        "publishedAt", "createdAt", "updatedAt"
+                        "publishedAt", "createdAt", "updatedAt", "routes"
                 )
                 .isEqualTo(firstPublished.published());
+        assertThat(secondDraft.draft().routes()).hasSameSizeAs(firstPublished.published().routes());
+        assertThat(secondDraft.draft().routes().getFirst())
+                .usingRecursiveComparison()
+                .ignoringFields("id", "revision", "createdAt", "updatedAt")
+                .isEqualTo(firstPublished.published().routes().getFirst());
         String discardedDraftId = secondDraft.draft().id();
         modelService.discardDraft(created.modelId(), secondDraft.draft().revision());
         assertThat(versionMapper.selectById(discardedDraftId)).isNull();
@@ -170,6 +184,10 @@ class ModelCatalogMySqlRedisIntegrationTest {
         assertThat(internalModel.costTimePricingPolicy().rules().getFirst().costRates().outputPerMillion())
                 .isEqualByComparingTo("0.300000");
         assertThat(internalModel.quotaTimePricingPolicy().rules()).hasSize(2);
+        assertThat(internalModel.routes()).singleElement().satisfies(route -> {
+            assertThat(route.routeId()).isNotBlank();
+            assertThat(route.providerCode()).isEqualTo(provider.code());
+        });
         assertThat(internalModel.quotaTimePricingPolicy().rules().get(1).quotaMultiplier())
                 .isEqualByComparingTo("1.200000");
         assertThat(credentialService.resolve(internalModel.credentialReference()).secret())
@@ -234,6 +252,40 @@ class ModelCatalogMySqlRedisIntegrationTest {
         assertThat(versionMapper.selectById(draftId)).isNull();
         assertThat(modelService.list())
                 .noneMatch(model -> model.modelId().equals(created.modelId()));
+    }
+
+    @Test
+    void updatesPrimaryRouteSchedulingWithoutOverwritingDraftManagedConfiguration() {
+        String suffix = suffix();
+        var provider = providerService.create(providerRequest(suffix));
+        var created = modelService.create(new CreateModelRequest(
+                "it-primary-route-" + suffix, provider.id(), version("Primary route", "1")
+        ));
+        var primary = created.draft().routes().getFirst();
+
+        var updated = modelService.updateRoute(created.modelId(), primary.id(), new UpdateModelRouteRequest(
+                primary.revision(), new ModelRouteInput(
+                        "不应覆盖默认路由名称", provider.id(), "should-not-replace-upstream",
+                        10, 250, 8, 600, 120_000L,
+                        false, false, "ACTIVE", "USD",
+                        new BigDecimal("99"), new BigDecimal("98"), new BigDecimal("97"),
+                        new BigDecimal("96"), null
+                )
+        ));
+
+        assertThat(updated.priority()).isEqualTo(10);
+        assertThat(updated.weight()).isEqualTo(250);
+        assertThat(updated.maxConcurrency()).isEqualTo(8);
+        assertThat(updated.requestsPerMinute()).isEqualTo(600);
+        assertThat(updated.tokensPerMinute()).isEqualTo(120_000L);
+        assertThat(updated.failoverEnabled()).isFalse();
+        assertThat(updated.circuitBreakerEnabled()).isFalse();
+        assertThat(updated.routeName()).isEqualTo(primary.routeName());
+        assertThat(updated.providerId()).isEqualTo(primary.providerId());
+        assertThat(updated.upstreamModel()).isEqualTo(primary.upstreamModel());
+        assertThat(updated.costCurrency()).isEqualTo(primary.costCurrency());
+        assertThat(updated.costRates()).isEqualTo(primary.costRates());
+        assertThat(updated.costTimePricingPolicy()).isEqualTo(primary.costTimePricingPolicy());
     }
 
     @Test
