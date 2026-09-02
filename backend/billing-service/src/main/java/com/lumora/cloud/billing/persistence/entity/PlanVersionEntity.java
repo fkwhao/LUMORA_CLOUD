@@ -18,6 +18,7 @@ public class PlanVersionEntity {
     private Long monthlyPriceMinor;
     private String currency;
     private BigDecimal weeklyQuota;
+    private String modelAccessMode;
     private String status;
     private Instant publishedAt;
     private Instant createdAt;
@@ -39,6 +40,7 @@ public class PlanVersionEntity {
         entity.monthlyPriceMinor = monthlyPriceMinor;
         entity.currency = currency;
         entity.weeklyQuota = weeklyQuota;
+        entity.modelAccessMode = "SELECTED";
         entity.status = PlanVersionStatus.PUBLISHED.name();
         entity.publishedAt = now;
         return entity;
@@ -50,6 +52,7 @@ public class PlanVersionEntity {
     public Long getMonthlyPriceMinor() { return monthlyPriceMinor; }
     public String getCurrency() { return currency; }
     public BigDecimal getWeeklyQuota() { return weeklyQuota; }
+    public String getModelAccessMode() { return modelAccessMode; }
     public String getStatus() { return status; }
     public Instant getPublishedAt() { return publishedAt; }
     public Instant getCreatedAt() { return createdAt; }

@@ -10,10 +10,12 @@ import {
   type BillingOverview,
   type BillingPlan,
 } from "../../api/billing";
+import { listPublicModels, type PublicModel } from "../../api/catalog";
 
 export function PlansPage() {
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [overview, setOverview] = useState<BillingOverview | null>(null);
+  const [models, setModels] = useState<PublicModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingPlanId, setPendingPlanId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,16 +23,25 @@ export function PlansPage() {
   async function load() {
     setLoading(true);
     setError(null);
-    const [plansResult, overviewResult] = await Promise.allSettled([listPublishedPlans(), getBillingOverview()]);
+    const [plansResult, overviewResult, modelsResult] = await Promise.allSettled([
+      listPublishedPlans(),
+      getBillingOverview(),
+      listPublicModels(),
+    ]);
     if (plansResult.status === "fulfilled") {
       setPlans(plansResult.value);
     }
     if (overviewResult.status === "fulfilled") {
       setOverview(overviewResult.value);
     }
+    if (modelsResult.status === "fulfilled") {
+      setModels(modelsResult.value);
+    }
     const failure = plansResult.status === "rejected"
       ? plansResult.reason
-      : overviewResult.status === "rejected" ? overviewResult.reason : null;
+      : overviewResult.status === "rejected"
+        ? overviewResult.reason
+        : modelsResult.status === "rejected" ? modelsResult.reason : null;
     if (failure) {
       setError(message(failure));
     }
@@ -98,7 +109,14 @@ export function PlansPage() {
                   <div><strong className="text-3xl font-semibold">{formatMoney(plan.monthlyPriceMinor, plan.currency)}</strong><span className="ml-1 text-sm text-muted">/月</span></div>
                   <ul className="space-y-3 text-sm text-muted">
                     <li className="flex items-center gap-2"><Check className="text-success" size={16} /> 每周 {formatQuota(plan.weeklyQuota)} 套餐额度</li>
-                    <li className="flex items-center gap-2"><Check className="text-success" size={16} /> Lumora 云端模型目录</li>
+                    <li className="flex items-start gap-2">
+                      <Check className="mt-0.5 shrink-0 text-success" size={16} />
+                      <span>
+                        {plan.modelAccessMode === "ALL_PUBLISHED_LEGACY"
+                          ? "全部当前已发布模型"
+                          : modelNames(plan, models).join("、") || `${plan.modelCodes.length} 个套餐模型`}
+                      </span>
+                    </li>
                     <li className="flex items-center gap-2"><Check className="text-success" size={16} /> 每七天自动创建新额度周期</li>
                     <li className="flex items-center gap-2"><Check className="text-success" size={16} /> 当前发布版本 v{plan.versionNo}</li>
                   </ul>
@@ -132,6 +150,11 @@ function formatMoney(minor: number, currency: string): string {
 
 function formatQuota(value: number): string {
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 6 }).format(value);
+}
+
+function modelNames(plan: BillingPlan, models: PublicModel[]): string[] {
+  const names = new Map(models.map((model) => [model.code, model.displayName]));
+  return plan.modelCodes.map((code) => names.get(code) ?? code);
 }
 
 function message(reason: unknown): string {

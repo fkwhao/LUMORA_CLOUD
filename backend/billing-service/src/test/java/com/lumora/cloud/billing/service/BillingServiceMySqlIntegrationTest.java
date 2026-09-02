@@ -5,6 +5,8 @@ import com.lumora.cloud.api.billing.BillingContracts.ReservationStatus;
 import com.lumora.cloud.api.billing.BillingContracts.ReserveRequest;
 import com.lumora.cloud.api.billing.BillingContracts.SettleRequest;
 import com.lumora.cloud.api.billing.BillingContracts.UsageStatus;
+import com.lumora.cloud.api.catalog.CatalogClient;
+import com.lumora.cloud.api.catalog.CatalogContracts.PublishedModelReference;
 import com.lumora.cloud.billing.error.ApiException;
 import com.lumora.cloud.billing.web.BillingWebContracts.BillingHistoryResponse;
 import com.lumora.cloud.billing.web.BillingWebContracts.BillingOverviewResponse;
@@ -19,11 +21,13 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,6 +44,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 @EnabledIfEnvironmentVariable(named = "LUMORA_RUN_MYSQL_TESTS", matches = "true")
 class BillingServiceMySqlIntegrationTest {
+
+    @MockitoBean
+    private CatalogClient catalogClient;
 
     @Autowired
     private BillingCatalogService catalogService;
@@ -64,16 +71,19 @@ class BillingServiceMySqlIntegrationTest {
 
     @Test
     void completesIdempotentQuotaLifecycleAgainstMySql() {
+        org.mockito.Mockito.when(catalogClient.publishedModelReferences())
+                .thenReturn(List.of(new PublishedModelReference("openai-gpt-test", "Test Model")));
         String suffix = UUID.randomUUID().toString().replace("-", "");
         long userId = 9_000_000_000L + Math.abs((long) suffix.hashCode());
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         var statisticsBefore = statisticsService.statistics();
 
         PlanResponse plan = catalogService.create(new CreatePlanRequest(
-                "it-" + suffix, "集成测试套餐", "仅供自动化测试", 19_900L, "CNY", amount("100")
+                "it-" + suffix, "集成测试套餐", "仅供自动化测试", 19_900L, "CNY", amount("100"),
+                List.of("openai-gpt-test")
         ));
         PlanResponse secondVersion = catalogService.publishVersion(plan.planId(), new CreatePlanVersionRequest(
-                29_900L, "CNY", amount("200")
+                29_900L, "CNY", amount("200"), List.of("openai-gpt-test")
         ));
         assertThat(secondVersion.versionNo()).isEqualTo(2);
         assertThat(catalogService.versions(plan.planId()))

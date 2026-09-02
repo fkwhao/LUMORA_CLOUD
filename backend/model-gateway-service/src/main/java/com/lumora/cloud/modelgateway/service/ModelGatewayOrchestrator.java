@@ -16,6 +16,7 @@ import com.lumora.cloud.modelgateway.concurrency.RequestLease;
 import com.lumora.cloud.modelgateway.concurrency.RequestLeaseService;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
 import com.lumora.cloud.modelgateway.domain.TokenUsage;
+import com.lumora.cloud.modelgateway.domain.GatewayProtocol;
 import com.lumora.cloud.modelgateway.domain.ValidatedChatRequest;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.provider.ModelProviderClient;
@@ -61,6 +62,7 @@ public class ModelGatewayOrchestrator {
     private final BillingRecoveryService recovery;
     private final ModelProviderClient providerClient;
     private final ProviderUsageParser usageParser;
+    private final LumoraProtocolAdapter lumoraProtocol;
     private final ObjectMapper objectMapper;
     private final ModelGatewayProperties properties;
 
@@ -76,6 +78,7 @@ public class ModelGatewayOrchestrator {
             BillingRecoveryService recovery,
             ModelProviderClient providerClient,
             ProviderUsageParser usageParser,
+            LumoraProtocolAdapter lumoraProtocol,
             ObjectMapper objectMapper,
             ModelGatewayProperties properties
     ) {
@@ -90,6 +93,7 @@ public class ModelGatewayOrchestrator {
         this.recovery = recovery;
         this.providerClient = providerClient;
         this.usageParser = usageParser;
+        this.lumoraProtocol = lumoraProtocol;
         this.objectMapper = objectMapper;
         this.properties = properties;
     }
@@ -97,7 +101,7 @@ public class ModelGatewayOrchestrator {
     public Mono<ModelGatewayResponse> invoke(
             GatewayRequestContext context,
             JsonNode body,
-            ProviderProtocol protocol
+            GatewayProtocol protocol
     ) {
         return Mono.defer(() -> {
             ValidatedChatRequest request = validator.parse(body, protocol);
@@ -124,12 +128,19 @@ public class ModelGatewayOrchestrator {
     ) {
         return Mono.fromCallable(() -> {
                     PricingSnapshot pricing = quotaCalculator.snapshot(model, Instant.now());
+                    ProviderProtocol upstreamProtocol = ProviderProtocol.parse(model.protocolType());
                     return new PreparedCall(
                             model,
-                            validator.upstreamBody(request, model),
+                            request.protocol().isInternal()
+                                    ? lumoraProtocol.upstreamBody(
+                                            request.originalBody(), model, upstreamProtocol,
+                                            request.stream(), request.requestedMaxOutputTokens()
+                                    )
+                                    : validator.upstreamBody(request, model),
                             credentials.resolve(model.credentialReference()),
                             pricing,
-                            quotaCalculator.maximum(model, request.requestedMaxOutputTokens(), pricing)
+                            quotaCalculator.maximum(model, request.requestedMaxOutputTokens(), pricing),
+                            upstreamProtocol
                     );
                 })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -157,10 +168,10 @@ public class ModelGatewayOrchestrator {
                         .then(invokeProvider(context, request, call))
                         .flatMap(provider -> request.stream()
                                 ? Mono.just(streamingResponse(
-                                        context, lease, permit, call, request.protocol(), provider
+                                        context, lease, permit, call, request, provider
                                 ))
                                 : bufferedResponse(
-                                        context, lease, permit, call, request.protocol(), provider
+                                        context, lease, permit, call, request, provider
                                 )))
                 .onErrorResume(error -> handleBeforeResponseFailure(error, lease, permit));
     }
@@ -201,7 +212,7 @@ public class ModelGatewayOrchestrator {
             RequestLease lease,
             ConcurrencyPermit permit,
             PreparedCall call,
-            ProviderProtocol protocol,
+            ValidatedChatRequest request,
             ProviderCall provider
     ) {
         return DataBufferUtils.join(
@@ -215,11 +226,21 @@ public class ModelGatewayOrchestrator {
                     return bytes;
                 })
                 .defaultIfEmpty(new byte[0])
-                .flatMap(bytes -> finalizeBuffered(context, lease, permit, call, protocol, bytes)
-                        .map(ignored -> new ModelGatewayResponse(
-                                provider.status(), responseHeaders(provider.headers(), context, call.model(), false),
-                                Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(bytes))
-                        )));
+                .flatMap(bytes -> finalizeBuffered(context, lease, permit, call, call.upstreamProtocol(), bytes)
+                        .map(ignored -> {
+                            byte[] responseBytes = request.protocol().isInternal()
+                                    ? lumoraProtocol.bufferedResponse(
+                                            bytes, call.model(), call.upstreamProtocol(), context.traceId()
+                                    )
+                                    : bytes;
+                            return new ModelGatewayResponse(
+                                    provider.status(), responseHeaders(
+                                            provider.headers(), context, call.model(), false,
+                                            request.protocol().isInternal()
+                                    ),
+                                    Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(responseBytes))
+                            );
+                        }));
     }
 
     private Mono<Boolean> finalizeBuffered(
@@ -243,14 +264,19 @@ public class ModelGatewayOrchestrator {
             RequestLease lease,
             ConcurrencyPermit permit,
             PreparedCall call,
-            ProviderProtocol protocol,
+            ValidatedChatRequest request,
             ProviderCall provider
     ) {
-        StreamUsageTracker tracker = new StreamUsageTracker(objectMapper, usageParser, protocol);
+        StreamUsageTracker tracker = new StreamUsageTracker(objectMapper, usageParser, call.upstreamProtocol());
         AtomicBoolean finalized = new AtomicBoolean();
         Flux<DataBuffer> monitored = provider.body()
                 .map(buffer -> copyAndTrack(buffer, tracker));
-        Flux<DataBuffer> body = monitored
+        Flux<DataBuffer> translated = request.protocol().isInternal()
+                ? lumoraProtocol.streamingResponse(
+                        monitored, call.model(), call.upstreamProtocol(), context.traceId()
+                )
+                : monitored;
+        Flux<DataBuffer> body = translated
                 .concatWith(Flux.defer(() -> {
                     tracker.finish();
                     return finalizeOnce(
@@ -272,7 +298,9 @@ public class ModelGatewayOrchestrator {
                         )
                 ).subscribe());
         return new ModelGatewayResponse(
-                provider.status(), responseHeaders(provider.headers(), context, call.model(), true), body
+                provider.status(), responseHeaders(
+                        provider.headers(), context, call.model(), true, request.protocol().isInternal()
+                ), body
         );
     }
 
@@ -391,11 +419,18 @@ public class ModelGatewayOrchestrator {
             HttpHeaders providerHeaders,
             GatewayRequestContext context,
             ResolvedModelConfig model,
-            boolean stream
+            boolean stream,
+            boolean internalProtocol
     ) {
         HttpHeaders headers = new HttpHeaders();
         headers.putAll(providerHeaders);
-        if (headers.getContentType() == null) {
+        if (internalProtocol) {
+            headers.setContentType(stream
+                    ? org.springframework.http.MediaType.TEXT_EVENT_STREAM
+                    : org.springframework.http.MediaType.APPLICATION_JSON);
+            headers.remove(HttpHeaders.CONTENT_LENGTH);
+            headers.remove(HttpHeaders.CONTENT_ENCODING);
+        } else if (headers.getContentType() == null) {
             headers.setContentType(stream
                     ? org.springframework.http.MediaType.TEXT_EVENT_STREAM
                     : org.springframework.http.MediaType.APPLICATION_JSON);
@@ -412,7 +447,8 @@ public class ModelGatewayOrchestrator {
             ObjectNode upstreamBody,
             String credential,
             PricingSnapshot pricing,
-            BigDecimal maximumQuota
+            BigDecimal maximumQuota,
+            ProviderProtocol upstreamProtocol
     ) {
     }
 }

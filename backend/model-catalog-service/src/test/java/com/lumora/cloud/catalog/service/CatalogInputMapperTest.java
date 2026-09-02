@@ -117,7 +117,7 @@ class CatalogInputMapperTest {
         BigDecimal one = BigDecimal.ONE;
         return new ModelVersionInput(
                 "Test", null, "upstream", 8_192, 1_024,
-                true, true, false, true, "CNY",
+                true, true, false, true, false, "CNY",
                 zero, zero, null, zero, costPolicy,
                 one, zero, null, one, zero, quotaPolicy
         );

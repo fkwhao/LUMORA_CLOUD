@@ -17,7 +17,8 @@ public final class CatalogContracts {
             boolean reasoning,
             boolean tools,
             boolean vision,
-            boolean json
+            boolean json,
+            boolean webSearch
     ) {
     }
 
@@ -107,5 +108,8 @@ public final class CatalogContracts {
             String fingerprint,
             Instant rotatedAt
     ) {
+    }
+
+    public record PublishedModelReference(String modelCode, String displayName) {
     }
 }

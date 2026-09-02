@@ -2,16 +2,16 @@
 
 ## 1. 文档状态
 
-最后同步：2026-09-01。
+最后同步：2026-09-02。
 
 本文记录 LUMORA 云端能力的目标设计。当前 `LUMORA_CLOUD` 已建立后端 Maven 多模块、统一
 React 前端和本地部署配置。User Service、Gateway 身份链路以及网页注册、登录、刷新和退出已经完成；
 Billing Service 的套餐、订阅周额度和模型请求额度状态机已经实现；Model Catalog Service 的供应商、
 模型草稿、发布版本、启停、版本历史和缓存读取也已实现；管理端已经接入上述模型目录能力。Model
-Gateway 的三种协议代理、额度预占、并发控制、Usage 结算与失败补偿首版已经完成；套餐订单、开发环境
+Gateway 的统一内部协议、三种上游协议适配、额度预占、并发控制、Usage 结算与失败补偿首版已经完成；套餐订单、开发环境
 测试支付和购买订阅发放闭环也已实现；管理总览已经接入 User、Billing 与 Model Catalog 各自维护的
 真实运营统计。用户/角色/会话管理、网关脱敏诊断、多币种钱包、MOCK 充值、管理员余额调整和钱包购买套餐
-也已经实现；真实第三方支付渠道和 Desktop 接入仍待实现。工程目录、模块边界和默认端口参见同目录下的
+也已经实现；Desktop 可选登录、套餐只读信息、套餐模型同步和官方模型调用首版已经接入。真实第三方支付渠道仍待实现。工程目录、模块边界和默认端口参见同目录下的
 `architecture.md`。
 
 本阶段只确定云端技术边界，不实现 Desktop Hook 生命周期、自动化或操作系统沙箱。
@@ -283,13 +283,42 @@ OpenFeign 与 WebClient 不互相替代：OpenFeign 用于内部短时控制调�
 云端首版不设置 `agent-service`。Agent 循环、上下文管理、工具调用、压缩和本地 Token 聚合仍由
 Desktop 内的 Python Agent 执行；Spring Cloud Gateway 只把模型请求路由到 Model Gateway Service。
 
-Model Gateway 应优先暴露与 Python Agent 现有 Provider 适配器兼容的请求和 SSE 协议，不在首版
-创造另一套私有流式协议。Python Agent 只新增轻量的 `LUMORA_MANAGED` 模型来源：使用云端 Base URL、
-登录 Access Token 和云端模型目录，同时复用现有协议的文本、推理、Tool Call、Finish Reason、错误和
-TokenUsage 解析逻辑。
+Model Gateway 对 Desktop 套餐调用暴露版本化的 LUMORA 内部协议，而不是把任一供应商协议当作平台
+协议。Python Agent 仅新增独立的 `lumora-cloud` Provider；原有 `chat-completions`、`responses` 和
+`anthropic` Provider、用户 BYOK 配置及直连行为保持不变。只有用户显式选择 `CLOUD_MANAGED` 时才进入：
 
-供应商流式响应经过 Model Gateway 时不是无法观察的字节转发。Model Gateway 必须解析计费字段，必要时
-完成协议标准化，再向 Agent 继续传递等价的流式事件和最终 Usage：
+```text
+Local Core / Python Agent
+  → LUMORA Internal Protocol v1
+  → Electron Main loopback 代理（注入 Cloud Access Token）
+  → POST /api/app/model/v1/invoke
+  → Model Gateway 按已发布模型快照选择上游协议
+  → Chat Completions / Responses / Anthropic Messages
+```
+
+内部请求统一表达消息文本/图片块、工具定义、Tool Call/Tool Result、推理强度、最大输出、供应商托管
+Web Search 开关和可选的
+`providerState`，不携带供应商协议类型、上游模型 ID、Base URL 或 API Key。内部响应统一表达正文、
+推理、工具调用和标准化 TokenUsage；流式响应使用版本化事件 `content_delta`、`reasoning_delta`、
+`tool_call_delta`、`web_search_started`、`web_search_progress`、`web_search_completed`、
+`web_search_failed`、`usage`、`completed`。搜索完成事件最多携带 12 条标题和 URL，供 Desktop 的
+工作日志与引用界面复用。`protocolVersion` 当前固定为 `1`，未知版本必须明确拒绝，不能
+静默按 OpenAI 格式解释。兼容原生协议的旧端点暂时保留给联调和迁移使用，但 Desktop 套餐链路只调用
+统一入口。
+
+托管 Web Search 是模型发布版本的显式能力，只在运营人员启用后允许 Desktop 使用。Model Gateway
+当前分别将其映射为 Responses 的 `web_search` 工具和 Anthropic Messages 的
+`web_search_20250305` 服务端工具；Chat Completions Compatible 没有跨供应商统一规范，因此管理端
+不允许为该协议启用此能力。模型的普通工具调用能力、Desktop 本地工具与审批链路不受影响。供应商返回
+的 Token Usage 仍按现有费率结算；如果供应商另收按次搜索费用，需要后续增加独立的搜索次数成本与
+Credit 费率，不能伪装成 Token 消耗。
+
+`providerState` 只承载多轮工具调用必须保留且无法无损抽象的供应商签名状态，并按协议、逻辑模型和
+供应商限定作用域；它不向 Renderer 展示，也不能跨模型复用。管理端配置的供应商协议仅由 Model
+Gateway 用于“内部协议 → 上游协议”适配，Desktop 不需要知道当前模型来自哪种上游协议。
+
+供应商流式响应经过 Model Gateway 时不是无法观察的字节转发。Model Gateway 必须解析并转换供应商
+事件，再向 Agent 返回统一事件和最终 Usage：
 
 ```text
 供应商 SSE → Model Gateway
@@ -360,6 +389,9 @@ Desktop 打开用户控制台时，Renderer 只能向 Electron Main 请求打开
 ### 7.1 包月套餐
 
 - 用户权益记录套餐版本、起止时间和状态。
+- 每个套餐版本保存不可变的模型编码集合；新版本必须至少选择一个当时已发布且启用的模型。修改套餐
+  只创建新版本，不改变已有订阅可使用的模型集合。历史数据迁移为 `ALL_PUBLISHED_LEGACY` 兼容模式，
+  新版本统一使用 `SELECTED`。
 - 每个周周期创建独立 `quota_bucket`，记录 `granted`、`reserved` 和 `consumed`。
 - 周额度通过创建新桶刷新，不覆盖历史用量。
 - 必须以数据库唯一约束保证同一权益、同一周期只创建一个额度桶；Redis 锁只用于降低并发，
@@ -498,6 +530,6 @@ Desktop 领域模型预留以下类型：
 6. 将 `frontend` 的套餐、用量和管理页面接入真实 API，在网页端承载购买、续费、充值和套餐管理
    （登录、会话恢复、管理端套餐版本/订阅发放/订单观测/真实运营统计、用户侧套餐/额度/用量/订单和
    开发测试支付、钱包充值和管理员钱包调整已完成；真实支付待实现）。
-7. 将 Desktop 接入可选登录、只读套餐/额度/用量、外部控制台入口和
-   `LOCAL_BYOK/CLOUD_MANAGED` 模型来源切换。
+7. 将 Desktop 接入可选登录、只读套餐/额度/用量、外部控制台入口、套餐模型同步和
+   `LOCAL_BYOK/CLOUD_MANAGED` 模型来源切换（首版已完成）。
 8. 完成负载与故障验证后，再评估独立 Payment Service、Transactional Outbox 或 Cloud Chat。

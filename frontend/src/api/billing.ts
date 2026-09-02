@@ -10,6 +10,8 @@ export interface BillingPlan {
   monthlyPriceMinor: number;
   currency: string;
   weeklyQuota: number;
+  modelAccessMode: "SELECTED" | "ALL_PUBLISHED_LEGACY";
+  modelCodes: string[];
 }
 
 export interface BillingSubscription {
@@ -31,12 +33,14 @@ export interface CreatePlanInput {
   monthlyPriceMinor: number;
   currency: string;
   weeklyQuota: number;
+  modelCodes: string[];
 }
 
 export interface CreatePlanVersionInput {
   monthlyPriceMinor: number;
   currency: string;
   weeklyQuota: number;
+  modelCodes: string[];
 }
 
 export interface GrantSubscriptionInput {

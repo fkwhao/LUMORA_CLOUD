@@ -40,6 +40,7 @@ public class SettlementService {
     private final ReservationMapper reservationMapper;
     private final UsageRecordMapper usageMapper;
     private final QuotaLedgerMapper ledgerMapper;
+    private final PlanModelAccessService planModelAccess;
 
     public SettlementService(
             SubscriptionService subscriptionService,
@@ -47,7 +48,8 @@ public class SettlementService {
             QuotaBucketMapper bucketMapper,
             ReservationMapper reservationMapper,
             UsageRecordMapper usageMapper,
-            QuotaLedgerMapper ledgerMapper
+            QuotaLedgerMapper ledgerMapper,
+            PlanModelAccessService planModelAccess
     ) {
         this.subscriptionService = subscriptionService;
         this.bucketService = bucketService;
@@ -55,6 +57,7 @@ public class SettlementService {
         this.reservationMapper = reservationMapper;
         this.usageMapper = usageMapper;
         this.ledgerMapper = ledgerMapper;
+        this.planModelAccess = planModelAccess;
     }
 
     @Transactional
@@ -88,6 +91,7 @@ public class SettlementService {
         processing = persisted;
 
         SubscriptionEntity subscription = subscriptionService.activeForUpdate(request.userId(), now);
+        planModelAccess.requireAllowed(subscription.getPlanVersionId(), processing.getModelCode());
         QuotaBucketEntity bucket = bucketService.currentForUpdate(subscription, now);
         if (bucketMapper.reserve(bucket.getId(), maximumQuota) != 1) {
             throw new ApiException(HttpStatus.PAYMENT_REQUIRED, "INSUFFICIENT_QUOTA", "当前套餐额度不足");

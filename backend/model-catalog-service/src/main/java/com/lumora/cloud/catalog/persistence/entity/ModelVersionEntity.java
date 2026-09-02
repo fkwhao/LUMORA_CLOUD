@@ -35,6 +35,7 @@ public class ModelVersionEntity {
     private Boolean supportsTools;
     private Boolean supportsVision;
     private Boolean supportsJson;
+    private Boolean supportsWebSearch;
     private String costCurrency;
     private BigDecimal inputCostPerMillion;
     private BigDecimal outputCostPerMillion;
@@ -128,6 +129,7 @@ public class ModelVersionEntity {
         entity.supportsTools = published.supportsTools;
         entity.supportsVision = published.supportsVision;
         entity.supportsJson = published.supportsJson;
+        entity.supportsWebSearch = published.supportsWebSearch;
         entity.costCurrency = published.costCurrency;
         entity.inputCostPerMillion = published.inputCostPerMillion;
         entity.outputCostPerMillion = published.outputCostPerMillion;
@@ -160,6 +162,7 @@ public class ModelVersionEntity {
         supportsTools = values.supportsTools();
         supportsVision = values.supportsVision();
         supportsJson = values.supportsJson();
+        supportsWebSearch = values.supportsWebSearch();
         costCurrency = values.costCurrency();
         inputCostPerMillion = values.inputCostPerMillion();
         outputCostPerMillion = values.outputCostPerMillion();
@@ -204,6 +207,7 @@ public class ModelVersionEntity {
     public Boolean getSupportsTools() { return supportsTools; }
     public Boolean getSupportsVision() { return supportsVision; }
     public Boolean getSupportsJson() { return supportsJson; }
+    public Boolean getSupportsWebSearch() { return supportsWebSearch; }
     public String getCostCurrency() { return costCurrency; }
     public BigDecimal getInputCostPerMillion() { return inputCostPerMillion; }
     public BigDecimal getOutputCostPerMillion() { return outputCostPerMillion; }

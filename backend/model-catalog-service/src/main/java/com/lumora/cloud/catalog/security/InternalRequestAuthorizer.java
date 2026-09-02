@@ -15,6 +15,9 @@ import java.util.Set;
 public class InternalRequestAuthorizer {
 
     private static final Set<String> ALLOWED_SERVICES = Set.of("lumora-model-gateway-service");
+    private static final Set<String> MODEL_REFERENCE_SERVICES = Set.of(
+            "lumora-model-gateway-service", "lumora-billing-service"
+    );
 
     private final byte[] expectedToken;
 
@@ -23,13 +26,21 @@ public class InternalRequestAuthorizer {
     }
 
     public void requireModelGateway(HttpServletRequest request) {
+        requireService(request, ALLOWED_SERVICES);
+    }
+
+    public void requireModelReferenceConsumer(HttpServletRequest request) {
+        requireService(request, MODEL_REFERENCE_SERVICES);
+    }
+
+    private void requireService(HttpServletRequest request, Set<String> allowedServices) {
         String token = request.getHeader(AuthHeaders.INTERNAL_TOKEN);
         String serviceId = request.getHeader(AuthHeaders.SERVICE_ID);
         boolean trusted = token != null && MessageDigest.isEqual(
                 expectedToken,
                 token.getBytes(StandardCharsets.UTF_8)
         );
-        if (!trusted || !ALLOWED_SERVICES.contains(serviceId)) {
+        if (!trusted || !allowedServices.contains(serviceId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "INTERNAL_ACCESS_DENIED", "内部服务身份无效");
         }
     }

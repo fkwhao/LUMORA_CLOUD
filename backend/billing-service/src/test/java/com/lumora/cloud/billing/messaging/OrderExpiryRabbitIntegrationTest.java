@@ -1,6 +1,8 @@
 package com.lumora.cloud.billing.messaging;
 
 import com.lumora.cloud.billing.config.BillingMessagingConfiguration;
+import com.lumora.cloud.api.catalog.CatalogClient;
+import com.lumora.cloud.api.catalog.CatalogContracts.PublishedModelReference;
 import com.lumora.cloud.billing.persistence.entity.PurchaseOrderEntity;
 import com.lumora.cloud.billing.persistence.mapper.PurchaseOrderMapper;
 import com.lumora.cloud.billing.service.BillingCatalogService;
@@ -21,6 +23,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,6 +41,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 )
 @EnabledIfEnvironmentVariable(named = "LUMORA_RUN_RABBIT_TESTS", matches = "true")
 class OrderExpiryRabbitIntegrationTest {
+
+    @MockitoBean
+    private CatalogClient catalogClient;
 
     @Autowired
     private AmqpAdmin amqpAdmin;
@@ -58,6 +65,8 @@ class OrderExpiryRabbitIntegrationTest {
 
     @Test
     void deadLettersExpiredMessageAndExpiresPendingOrder() throws InterruptedException {
+        org.mockito.Mockito.when(catalogClient.publishedModelReferences())
+                .thenReturn(List.of(new PublishedModelReference("test-model", "Test Model")));
         assertThat(listenerRegistry.getListenerContainers())
                 .isNotEmpty()
                 .allSatisfy(container -> assertThat(container.isRunning()).isTrue());
@@ -71,7 +80,8 @@ class OrderExpiryRabbitIntegrationTest {
         String delayRoutingKey = "order.expire.test." + suffix;
 
         var plan = catalogService.create(new CreatePlanRequest(
-                planCode, "RabbitMQ 订单过期测试", "自动化测试数据", 1L, "CNY", BigDecimal.ONE
+                planCode, "RabbitMQ 订单过期测试", "自动化测试数据", 1L, "CNY", BigDecimal.ONE,
+                List.of("test-model")
         ));
         Queue delayQueue = QueueBuilder.nonDurable(delayQueueName)
                 .autoDelete()

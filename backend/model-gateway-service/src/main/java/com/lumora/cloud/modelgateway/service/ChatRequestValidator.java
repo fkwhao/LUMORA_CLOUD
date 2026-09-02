@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
 import com.lumora.cloud.api.catalog.ProviderProtocol;
+import com.lumora.cloud.modelgateway.domain.GatewayProtocol;
 import com.lumora.cloud.modelgateway.domain.ValidatedChatRequest;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import org.springframework.http.HttpStatus;
@@ -14,7 +15,7 @@ import java.util.Locale;
 @Component
 public class ChatRequestValidator {
 
-    public ValidatedChatRequest parse(JsonNode body, ProviderProtocol protocol) {
+    public ValidatedChatRequest parse(JsonNode body, GatewayProtocol protocol) {
         if (!(body instanceof ObjectNode object)) {
             throw badRequest("请求体必须是 JSON 对象");
         }
@@ -26,6 +27,14 @@ public class ChatRequestValidator {
         JsonNode streamNode = object.get("stream");
         if (streamNode != null && !streamNode.isBoolean()) {
             throw badRequest("stream 必须是布尔值");
+        }
+        if (protocol.isInternal()) {
+            JsonNode version = object.get("protocolVersion");
+            if (version == null || !version.isTextual() || !"1".equals(version.textValue())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "LUMORA_PROTOCOL_VERSION_UNSUPPORTED",
+                        "仅支持 LUMORA 内部协议版本 1");
+            }
+            requireArray(object, "messages");
         }
         long requestedOutput = requestedOutputLimit(object, protocol);
         return new ValidatedChatRequest(
@@ -45,14 +54,18 @@ public class ChatRequestValidator {
             throw new ApiException(HttpStatus.CONFLICT, "MODEL_PROTOCOL_UNSUPPORTED",
                     "当前模型配置了云端不支持的 API 格式");
         }
-        if (modelProtocol != request.protocol()) {
+        if (request.protocol().isInternal()) {
+            throw new IllegalArgumentException("LUMORA internal requests must be translated by LumoraProtocolAdapter");
+        }
+        ProviderProtocol requestProtocol = request.protocol().providerProtocol();
+        if (modelProtocol != requestProtocol) {
             throw new ApiException(HttpStatus.CONFLICT, "MODEL_PROTOCOL_MISMATCH",
                     "当前模型不能通过该 API 格式调用");
         }
         ObjectNode body = request.originalBody().deepCopy();
         validateCapabilities(body, model);
         long outputLimit = Math.min(model.capabilities().maxOutputTokens(), request.requestedMaxOutputTokens());
-        return switch (request.protocol()) {
+        return switch (requestProtocol) {
             case OPENAI_COMPATIBLE -> openAiBody(body, model, request.stream(), outputLimit);
             case ANTHROPIC -> anthropicBody(body, model, request.stream(), outputLimit);
             case RESPONSES -> responsesBody(body, model, request.stream(), outputLimit);
@@ -184,7 +197,7 @@ public class ChatRequestValidator {
         return value.longValue();
     }
 
-    private long requestedOutputLimit(ObjectNode body, ProviderProtocol protocol) {
+    private long requestedOutputLimit(ObjectNode body, GatewayProtocol protocol) {
         return switch (protocol) {
             case ANTHROPIC -> positiveLimit(body, "max_tokens");
             case RESPONSES -> positiveLimit(body, "max_output_tokens");
@@ -192,7 +205,26 @@ public class ChatRequestValidator {
                     positiveLimit(body, "max_completion_tokens"),
                     positiveLimit(body, "max_tokens")
             );
+            case LUMORA_INTERNAL -> internalOutputLimit(body);
         };
+    }
+
+    private long internalOutputLimit(ObjectNode body) {
+        JsonNode generation = body.get("generation");
+        if (generation == null || generation.isNull()) {
+            return Long.MAX_VALUE;
+        }
+        if (!generation.isObject()) {
+            throw badRequest("generation 必须是对象");
+        }
+        JsonNode value = generation.get("maxOutputTokens");
+        if (value == null || value.isNull()) {
+            return Long.MAX_VALUE;
+        }
+        if (!value.canConvertToLong() || value.longValue() <= 0) {
+            throw badRequest("generation.maxOutputTokens 必须是正整数");
+        }
+        return value.longValue();
     }
 
     private long minimumSpecified(long first, long second) {

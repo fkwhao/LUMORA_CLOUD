@@ -2,6 +2,7 @@ package com.lumora.cloud.user.error;
 
 import com.lumora.cloud.api.AuthHeaders;
 import com.lumora.cloud.common.ApiError;
+import com.lumora.cloud.common.logging.SafeRequestErrorLogger;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -23,7 +24,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ApiError> handleApiException(ApiException exception, HttpServletRequest request) {
-        return error(exception.getStatus(), exception.getCode(), exception.getMessage(), request);
+        return error(exception.getStatus(), exception.getCode(), exception.getMessage(), request, exception);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -32,7 +33,7 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .orElse("请求参数不合法");
-        return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, request);
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, request, exception);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -44,25 +45,36 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .map(violation -> violation.getPropertyPath() + ": " + violation.getMessage())
                 .orElse("请求参数不合法");
-        return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, request);
+        return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, request, exception);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ApiError> handleUnreadableBody(HttpMessageNotReadableException exception, HttpServletRequest request) {
-        return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_BODY", "请求体格式不正确", request);
+        return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_BODY", "请求体格式不正确", request, exception);
     }
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> handleUnexpected(Exception exception, HttpServletRequest request) {
-        log.error("Unhandled user-service error", exception);
-        return error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "服务暂时不可用", request);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "服务暂时不可用", request, exception);
     }
 
-    private ResponseEntity<ApiError> error(HttpStatus status, String code, String message, HttpServletRequest request) {
+    private ResponseEntity<ApiError> error(
+            HttpStatus status,
+            String code,
+            String message,
+            HttpServletRequest request,
+            Throwable exception
+    ) {
         String traceId = request.getHeader(AuthHeaders.REQUEST_ID);
         if (traceId == null || traceId.isBlank()) {
             traceId = UUID.randomUUID().toString();
         }
-        return ResponseEntity.status(status).body(new ApiError(code, message, traceId, Instant.now()));
+        SafeRequestErrorLogger.log(
+                log, "user-service", status, code, traceId,
+                request.getMethod(), request.getRequestURI(), exception
+        );
+        return ResponseEntity.status(status)
+                .header(AuthHeaders.REQUEST_ID, traceId)
+                .body(new ApiError(code, message, traceId, Instant.now()));
     }
 }

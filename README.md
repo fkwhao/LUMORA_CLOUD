@@ -41,10 +41,11 @@ pnpm dev
 真实领域统计。后端已经完成用户认证闭环、
 Billing Service 的套餐、额度、订单与开发环境测试支付状态机，
 Model Catalog Service 的供应商与模型发布，以及 Model Gateway 首版调用闭环：模型解析、额度预占、
-并发控制、Chat Completions / Responses / Anthropic Messages JSON/SSE 代理、权威 Usage 结算和
+并发控制、LUMORA Internal Protocol v1、Chat Completions / Responses / Anthropic Messages 适配、
+供应商托管 Web Search、权威 Usage 结算和
 失败补偿。管理端已支持套餐与价格版本、用户查找、幂等订阅发放，以及模型供应商、加密 API Key、
-模型能力、成本、套餐额度费率、草稿、发布、启停和历史版本管理。钱包、真实第三方支付渠道和 Desktop
-云端模型适配仍按当前微服务边界继续实现。旧版单体 Demo 已废弃。
+模型能力、成本、套餐额度费率、草稿、发布、启停和历史版本管理。钱包、MOCK 充值、钱包购买套餐及
+Desktop 云端模型适配已经实现；真实第三方支付渠道仍待接入。旧版单体 Demo 已废弃。
 
 ## 产品边界
 

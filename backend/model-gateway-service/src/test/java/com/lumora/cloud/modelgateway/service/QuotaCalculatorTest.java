@@ -122,7 +122,7 @@ class QuotaCalculatorTest {
         return new ResolvedModelConfig(
                 "test-model", "Test", null, "pricing-v1", "provider", "OPENAI_COMPATIBLE",
                 "https://api.example.com/v1", "TEST_KEY", "upstream-test",
-                new ModelCapabilities(1_000, 100, true, true, true, true),
+                new ModelCapabilities(1_000, 100, true, true, true, true, false),
                 "USD", new CostRates(amount("1"), amount("1"), amount("0"), amount("1")), costPolicy,
                 rates, quotaPolicy, Instant.now()
         );

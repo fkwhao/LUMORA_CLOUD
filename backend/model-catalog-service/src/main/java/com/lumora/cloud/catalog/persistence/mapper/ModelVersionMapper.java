@@ -59,6 +59,7 @@ public interface ModelVersionMapper extends BaseMapper<ModelVersionEntity> {
                 context_window = #{entity.contextWindow}, max_output_tokens = #{entity.maxOutputTokens},
                 supports_reasoning = #{entity.supportsReasoning}, supports_tools = #{entity.supportsTools},
                 supports_vision = #{entity.supportsVision}, supports_json = #{entity.supportsJson},
+                supports_web_search = #{entity.supportsWebSearch},
                 cost_currency = #{entity.costCurrency},
                 input_cost_per_million = #{entity.inputCostPerMillion},
                 output_cost_per_million = #{entity.outputCostPerMillion},

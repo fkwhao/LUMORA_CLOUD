@@ -9,6 +9,7 @@ import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
 import com.lumora.cloud.api.catalog.ProviderProtocol;
+import com.lumora.cloud.modelgateway.domain.GatewayProtocol;
 import com.lumora.cloud.modelgateway.concurrency.ConcurrencyPermit;
 import com.lumora.cloud.modelgateway.concurrency.DistributedConcurrencyLimiter;
 import com.lumora.cloud.modelgateway.concurrency.RequestLease;
@@ -77,7 +78,8 @@ class ModelGatewayOrchestratorTest {
         orchestrator = new ModelGatewayOrchestrator(
                 new ChatRequestValidator(), modelCache, credentials, new QuotaCalculator(), requestIds,
                 requestLeases, concurrencyLimiter, billing, recovery, providerClient,
-                new ProviderUsageParser(), objectMapper, properties()
+                new ProviderUsageParser(), new LumoraProtocolAdapter(objectMapper, new ProviderUsageParser()),
+                objectMapper, properties()
         );
         when(requestLeases.acquire(context)).thenReturn(Mono.just(lease));
         when(requestLeases.release(any())).thenReturn(Mono.empty());
@@ -106,7 +108,7 @@ class ModelGatewayOrchestratorTest {
 
         Mono<String> result = orchestrator.invoke(context, objectMapper.readTree("""
                         {"model":"test-model","messages":[],"max_tokens":100}
-                        """), ProviderProtocol.OPENAI_COMPATIBLE)
+                        """), GatewayProtocol.OPENAI_COMPATIBLE)
                 .flatMap(call -> org.springframework.core.io.buffer.DataBufferUtils.join(call.body()))
                 .map(buffer -> {
                     byte[] bytes = new byte[buffer.readableByteCount()];
@@ -137,7 +139,7 @@ class ModelGatewayOrchestratorTest {
 
         StepVerifier.create(orchestrator.invoke(context, objectMapper.readTree("""
                         {"model":"test-model","messages":[]}
-                        """), ProviderProtocol.OPENAI_COMPATIBLE))
+                        """), GatewayProtocol.OPENAI_COMPATIBLE))
                 .expectErrorSatisfies(error -> {
                     assertThat(error).isInstanceOf(ApiException.class);
                     assertThat(((ApiException) error).getCode()).isEqualTo("UPSTREAM_REQUEST_REJECTED");
@@ -168,7 +170,7 @@ class ModelGatewayOrchestratorTest {
 
         Mono<Long> result = orchestrator.invoke(context, objectMapper.readTree("""
                         {"model":"test-model","messages":[],"stream":true,"max_tokens":100}
-                        """), ProviderProtocol.OPENAI_COMPATIBLE)
+                        """), GatewayProtocol.OPENAI_COMPATIBLE)
                 .flatMapMany(call -> call.body())
                 .map(buffer -> {
                     long size = buffer.readableByteCount();
@@ -197,7 +199,7 @@ class ModelGatewayOrchestratorTest {
 
         StepVerifier.create(orchestrator.invoke(context, objectMapper.readTree("""
                         {"model":"test-model","messages":[]}
-                        """), ProviderProtocol.OPENAI_COMPATIBLE))
+                        """), GatewayProtocol.OPENAI_COMPATIBLE))
                 .expectErrorSatisfies(error -> {
                     assertThat(error).isInstanceOf(ApiException.class);
                     assertThat(((ApiException) error).getCode()).isEqualTo("MODEL_REQUEST_ALREADY_PROCESSED");
@@ -231,7 +233,7 @@ class ModelGatewayOrchestratorTest {
 
         StepVerifier.create(orchestrator.invoke(context, objectMapper.readTree("""
                         {"model":"test-model","messages":[]}
-                        """), ProviderProtocol.OPENAI_COMPATIBLE))
+                        """), GatewayProtocol.OPENAI_COMPATIBLE))
                 .expectNextCount(1)
                 .verifyComplete();
 
@@ -244,7 +246,7 @@ class ModelGatewayOrchestratorTest {
         return new ResolvedModelConfig(
                 "test-model", "Test", null, "pricing-v1", "provider", "OPENAI_COMPATIBLE",
                 "https://api.example.com/v1", "TEST_KEY", "upstream-model",
-                new ModelCapabilities(1_000, 100, true, true, true, true),
+                new ModelCapabilities(1_000, 100, true, true, true, true, false),
                 "USD", new CostRates(amount("1"), amount("1"), amount("1"), amount("2")), null,
                 new QuotaRates(amount("10"), amount("10"), amount("10"), amount("20"), amount("0.000001")),
                 null, Instant.now()

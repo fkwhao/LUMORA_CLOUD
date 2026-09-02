@@ -498,6 +498,9 @@ function ModelEditor({
   ));
   const [version, setVersion] = useState<ModelVersionInput>(initialVersion);
   const [dirty, setDirty] = useState(false);
+  const selectedProvider = providers.find((provider) => String(provider.id) === providerId);
+  const hostedWebSearchAvailable = selectedProvider?.protocolType === "ANTHROPIC"
+    || selectedProvider?.protocolType === "RESPONSES";
   const [costCacheCreationEnabled, setCostCacheCreationEnabled] = useState(
     (initialVersion.cacheCreationInputCostPerMillion ?? 0) > 0,
   );
@@ -656,7 +659,12 @@ function ModelEditor({
                 name="providerId"
                 onSelectionChange={(key) => {
                   if (!key) return;
-                  setProviderId(String(key));
+                  const nextProviderId = String(key);
+                  const nextProvider = providers.find((provider) => String(provider.id) === nextProviderId);
+                  setProviderId(nextProviderId);
+                  if (nextProvider?.protocolType !== "ANTHROPIC" && nextProvider?.protocolType !== "RESPONSES") {
+                    setVersion((current) => ({ ...current, supportsWebSearch: false }));
+                  }
                   setDirty(true);
                 }}
                 placeholder="请选择供应商"
@@ -708,7 +716,17 @@ function ModelEditor({
                 <Capability isSelected={version.supportsTools} label="工具调用" name="supportsTools" onChange={(selected) => updateVersion({ supportsTools: selected })} />
                 <Capability isSelected={version.supportsVision} label="图片输入" name="supportsVision" onChange={(selected) => updateVersion({ supportsVision: selected })} />
                 <Capability isSelected={version.supportsJson} label="JSON 输出" name="supportsJson" onChange={(selected) => updateVersion({ supportsJson: selected })} />
+                <Capability
+                  isDisabled={!hostedWebSearchAvailable}
+                  isSelected={version.supportsWebSearch}
+                  label="供应商托管 Web Search"
+                  name="supportsWebSearch"
+                  onChange={(selected) => updateVersion({ supportsWebSearch: selected })}
+                />
               </div>
+              <p className="text-xs leading-5 text-muted">
+                由上游供应商执行联网搜索并返回来源引用；当前仅支持 Anthropic Messages 和 Responses 协议。
+              </p>
             </EditorSection>
 
             <EditorSection icon={CircleDollarSign} title="默认上游成本">
@@ -934,14 +952,15 @@ function EditorSection({ icon: Icon, title, children }: {
   );
 }
 
-function Capability({ name, label, isSelected, onChange }: {
+function Capability({ name, label, isSelected, isDisabled = false, onChange }: {
   name: string;
   label: string;
   isSelected: boolean;
+  isDisabled?: boolean;
   onChange: (selected: boolean) => void;
 }) {
   return (
-    <Checkbox isSelected={isSelected} name={name} onChange={onChange} value="true">
+    <Checkbox isDisabled={isDisabled} isSelected={isSelected} name={name} onChange={onChange} value="true">
       <Checkbox.Content>
         <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
         <Label>{label}</Label>
@@ -1454,6 +1473,7 @@ function emptyVersion(): ModelVersionInput {
     supportsTools: true,
     supportsVision: false,
     supportsJson: true,
+    supportsWebSearch: false,
     costCurrency: "USD",
     uncachedInputCostPerMillion: 0,
     cachedInputCostPerMillion: 0,
@@ -1476,6 +1496,7 @@ function versionDefaults(version: ModelVersion): ModelVersionInput {
     supportsTools: version.capabilities.tools,
     supportsVision: version.capabilities.vision,
     supportsJson: version.capabilities.json,
+    supportsWebSearch: version.capabilities.webSearch,
     costCurrency: version.costCurrency,
     uncachedInputCostPerMillion: version.costRates.uncachedInputPerMillion,
     cachedInputCostPerMillion: version.costRates.cachedInputPerMillion,
@@ -1590,6 +1611,7 @@ function capabilitySummary(version: ModelVersion): string {
     version.capabilities.tools ? "工具调用" : null,
     version.capabilities.vision ? "图片输入" : null,
     version.capabilities.json ? "JSON 输出" : null,
+    version.capabilities.webSearch ? "托管联网搜索" : null,
   ].filter(Boolean);
   return labels.length > 0 ? labels.join("、") : "基础文本";
 }

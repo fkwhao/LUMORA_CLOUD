@@ -39,7 +39,8 @@ public class CatalogInputMapper {
         ModelVersionValues values = new ModelVersionValues(
                 input.displayName().trim(), trimToNull(input.description()), input.upstreamModel().trim(),
                 input.contextWindow(), input.maxOutputTokens(), input.supportsReasoning(), input.supportsTools(),
-                input.supportsVision(), input.supportsJson(), input.costCurrency().trim().toUpperCase(Locale.ROOT),
+                input.supportsVision(), input.supportsJson(), input.supportsWebSearch(),
+                input.costCurrency().trim().toUpperCase(Locale.ROOT),
                 CatalogAmounts.nonNegative(input.uncachedInputCostPerMillion(), "uncachedInputCostPerMillion"),
                 CatalogAmounts.nonNegative(input.outputCostPerMillion(), "outputCostPerMillion"),
                 CatalogAmounts.nonNegative(input.cachedInputCostPerMillion(), "cachedInputCostPerMillion"),

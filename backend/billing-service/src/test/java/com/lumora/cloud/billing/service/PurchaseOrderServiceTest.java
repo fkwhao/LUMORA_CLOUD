@@ -39,7 +39,7 @@ class PurchaseOrderServiceTest {
         PurchaseOrderService service = service(properties);
         PlanResponse plan = new PlanResponse(
                 10L, "pro", "Lumora Pro", "test", 20L, 3,
-                9_900L, "CNY", new BigDecimal("100.000000")
+                9_900L, "CNY", new BigDecimal("100.000000"), "SELECTED", java.util.List.of("test-model")
         );
         when(catalogService.publishedVersion(20L)).thenReturn(plan);
 

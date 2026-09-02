@@ -298,7 +298,7 @@ class ModelCatalogMySqlRedisIntegrationTest {
         );
         return new ModelVersionInput(
                 displayName, "integration test", "upstream-test", 128_000, 8_192,
-                true, true, true, true, "CNY",
+                true, true, true, true, false, "CNY",
                 zero, zero, null, zero, costSchedule,
                 quotaRate, quotaRate, null, quotaRate, new BigDecimal("0.100000"), quotaSchedule
         );

@@ -16,7 +16,7 @@ public class ProviderUsageParser {
         return parseUsage(protocol, usage);
     }
 
-    TokenUsage parseUsage(ProviderProtocol protocol, JsonNode usage) {
+    public TokenUsage parseUsage(ProviderProtocol protocol, JsonNode usage) {
         if (usage == null || !usage.isObject()) {
             return null;
         }

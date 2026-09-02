@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -23,7 +24,8 @@ public final class BillingWebContracts {
             @Size(max = 500) String description,
             @Min(0) long monthlyPriceMinor,
             @NotBlank @Pattern(regexp = "[A-Z]{3}") String currency,
-            @NotNull @DecimalMin(value = "0.000001") BigDecimal weeklyQuota
+            @NotNull @DecimalMin(value = "0.000001") BigDecimal weeklyQuota,
+            @NotEmpty @Size(max = 200) List<@Pattern(regexp = "[a-z0-9][a-z0-9._-]{0,127}") String> modelCodes
     ) {
     }
 
@@ -39,7 +41,8 @@ public final class BillingWebContracts {
     public record CreatePlanVersionRequest(
             @Min(0) long monthlyPriceMinor,
             @NotBlank @Pattern(regexp = "[A-Z]{3}") String currency,
-            @NotNull @DecimalMin(value = "0.000001") BigDecimal weeklyQuota
+            @NotNull @DecimalMin(value = "0.000001") BigDecimal weeklyQuota,
+            @NotEmpty @Size(max = 200) List<@Pattern(regexp = "[a-z0-9][a-z0-9._-]{0,127}") String> modelCodes
     ) {
     }
 
@@ -52,8 +55,13 @@ public final class BillingWebContracts {
             int versionNo,
             long monthlyPriceMinor,
             String currency,
-            BigDecimal weeklyQuota
+            BigDecimal weeklyQuota,
+            String modelAccessMode,
+            List<String> modelCodes
     ) {
+        public PlanResponse {
+            modelCodes = List.copyOf(modelCodes);
+        }
     }
 
     public record SubscriptionResponse(

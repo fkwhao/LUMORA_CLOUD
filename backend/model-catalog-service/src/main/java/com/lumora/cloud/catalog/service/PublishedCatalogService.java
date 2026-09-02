@@ -4,6 +4,7 @@ import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.CostRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
+import com.lumora.cloud.api.catalog.CatalogContracts.PublishedModelReference;
 import com.lumora.cloud.catalog.error.ApiException;
 import com.lumora.cloud.catalog.persistence.entity.ModelVersionEntity;
 import com.lumora.cloud.catalog.persistence.mapper.CatalogQueryMapper;
@@ -50,6 +51,12 @@ public class PublishedCatalogService {
         return resolvedModels().stream().map(this::publicResponse).toList();
     }
 
+    public List<PublishedModelReference> publishedModelReferences() {
+        return resolvedModels().stream()
+                .map(model -> new PublishedModelReference(model.modelCode(), model.displayName()))
+                .toList();
+    }
+
     private List<ResolvedModelConfig> loadFromMySql() {
         return queryMapper.findPublishedModels().stream().map(this::resolved).toList();
     }
@@ -60,7 +67,8 @@ public class PublishedCatalogService {
                 entity.getProviderCode(), entity.getProtocolType(), entity.getBaseUrl(),
                 entity.getActiveCredentialReference(), entity.getUpstreamModel(), new ModelCapabilities(
                         entity.getContextWindow(), entity.getMaxOutputTokens(), entity.getSupportsReasoning(),
-                        entity.getSupportsTools(), entity.getSupportsVision(), entity.getSupportsJson()
+                        entity.getSupportsTools(), entity.getSupportsVision(), entity.getSupportsJson(),
+                        entity.getSupportsWebSearch()
                 ), entity.getCostCurrency(), new CostRates(
                         entity.getInputCostPerMillion(), entity.getCacheReadCostPerMillion(),
                         entity.getCacheWriteCostPerMillion(), entity.getOutputCostPerMillion()

@@ -37,6 +37,17 @@ export interface ModelCapabilities {
   tools: boolean;
   vision: boolean;
   json: boolean;
+  webSearch: boolean;
+}
+
+export interface PublicModel {
+  code: string;
+  displayName: string;
+  description?: string;
+  pricingVersion: string;
+  providerCode: string;
+  capabilities: ModelCapabilities;
+  publishedAt: string;
 }
 
 export interface ModelRates {
@@ -134,6 +145,7 @@ export interface ModelVersionInput {
   supportsTools: boolean;
   supportsVision: boolean;
   supportsJson: boolean;
+  supportsWebSearch: boolean;
   costCurrency: string;
   uncachedInputCostPerMillion: number;
   cachedInputCostPerMillion: number;
@@ -180,6 +192,10 @@ export function rotateProviderCredential(provider: ModelProvider, apiKey: string
 
 export function listModels(): Promise<AdminModel[]> {
   return apiFetch<AdminModel[]>("/api/admin/catalog/models");
+}
+
+export function listPublicModels(): Promise<PublicModel[]> {
+  return apiFetch<PublicModel[]>("/api/app/catalog/models");
 }
 
 export function listModelVersions(modelId: number): Promise<ModelVersion[]> {

@@ -7,6 +7,8 @@ import com.lumora.cloud.billing.persistence.entity.BillingPlanEntity;
 import com.lumora.cloud.billing.persistence.entity.PlanVersionEntity;
 import com.lumora.cloud.billing.persistence.mapper.BillingPlanMapper;
 import com.lumora.cloud.billing.persistence.mapper.PlanVersionMapper;
+import com.lumora.cloud.billing.persistence.mapper.PlanVersionModelMapper;
+import com.lumora.cloud.billing.persistence.entity.PlanVersionModelEntity;
 import com.lumora.cloud.billing.web.BillingWebContracts.CreatePlanRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.CreatePlanVersionRequest;
 import com.lumora.cloud.billing.web.BillingWebContracts.PlanResponse;
@@ -25,10 +27,19 @@ public class BillingCatalogService {
 
     private final BillingPlanMapper planMapper;
     private final PlanVersionMapper versionMapper;
+    private final PlanVersionModelMapper versionModelMapper;
+    private final PlanModelSelectionService modelSelection;
 
-    public BillingCatalogService(BillingPlanMapper planMapper, PlanVersionMapper versionMapper) {
+    public BillingCatalogService(
+            BillingPlanMapper planMapper,
+            PlanVersionMapper versionMapper,
+            PlanVersionModelMapper versionModelMapper,
+            PlanModelSelectionService modelSelection
+    ) {
         this.planMapper = planMapper;
         this.versionMapper = versionMapper;
+        this.versionModelMapper = versionModelMapper;
+        this.modelSelection = modelSelection;
     }
 
     @Transactional
@@ -38,6 +49,7 @@ public class BillingCatalogService {
             throw duplicatePlan();
         }
         BigDecimal weeklyQuota = BillingAmounts.positive(request.weeklyQuota(), "weeklyQuota");
+        List<String> modelCodes = modelSelection.normalizeAndValidate(request.modelCodes());
         BillingPlanEntity plan = BillingPlanEntity.create(code, request.name().trim(), trimToNull(request.description()));
         try {
             planMapper.insert(plan);
@@ -53,6 +65,7 @@ public class BillingCatalogService {
                 Instant.now()
         );
         versionMapper.insert(version);
+        insertModels(version.getId(), modelCodes);
         return response(plan, version);
     }
 
@@ -72,6 +85,9 @@ public class BillingCatalogService {
 
     @Transactional
     public PlanResponse publishVersion(Long planId, CreatePlanVersionRequest request) {
+        // Catalog validation is a remote control-plane call. Complete it before
+        // taking the plan row lock so a slow catalog cannot extend lock time.
+        List<String> modelCodes = modelSelection.normalizeAndValidate(request.modelCodes());
         BillingPlanEntity plan = planMapper.findByIdForUpdate(planId);
         if (plan == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PLAN_NOT_FOUND", "套餐不存在");
@@ -91,6 +107,7 @@ public class BillingCatalogService {
         );
         try {
             versionMapper.insert(version);
+            insertModels(version.getId(), modelCodes);
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "PLAN_VERSION_CONFLICT", "套餐版本已被其他操作发布");
         }
@@ -125,8 +142,15 @@ public class BillingCatalogService {
         return new PlanResponse(
                 plan.getId(), plan.getCode(), plan.getName(), plan.getDescription(),
                 version.getId(), version.getVersionNo(), version.getMonthlyPriceMinor(),
-                version.getCurrency(), version.getWeeklyQuota()
+                version.getCurrency(), version.getWeeklyQuota(), version.getModelAccessMode(),
+                versionModelMapper.findModelCodes(version.getId())
         );
+    }
+
+    private void insertModels(Long planVersionId, List<String> modelCodes) {
+        for (int index = 0; index < modelCodes.size(); index++) {
+            versionModelMapper.insert(PlanVersionModelEntity.create(planVersionId, modelCodes.get(index), index));
+        }
     }
 
     private String trimToNull(String value) {

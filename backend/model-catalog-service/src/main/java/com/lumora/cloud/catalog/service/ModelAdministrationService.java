@@ -66,6 +66,7 @@ public class ModelAdministrationService {
         }
         ProviderEntity provider = providerService.requireActiveForUpdate(request.providerId());
         ModelVersionValues values = inputMapper.values(request.version());
+        validateHostedWebSearch(provider, values);
         ModelDefinitionEntity model = ModelDefinitionEntity.create(code);
         try {
             modelMapper.insert(model);
@@ -115,6 +116,7 @@ public class ModelAdministrationService {
         }
         ProviderEntity provider = providerService.requireActiveForUpdate(request.providerId());
         ModelVersionValues values = inputMapper.values(request.version());
+        validateHostedWebSearch(provider, values);
         ModelVersionEntity update = ModelVersionEntity.draftUpdate(draft, provider, values);
         if (versionMapper.updateDraftOptimistic(update, request.expectedRevision()) != 1) {
             throw draftConflict();
@@ -162,6 +164,12 @@ public class ModelAdministrationService {
         if (provider == null || !"ACTIVE".equals(provider.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, "PROVIDER_DISABLED", "草稿引用的供应商不可用");
         }
+        if (!provider.getProtocolType().equals(draft.getProtocolType())
+                || !provider.getBaseUrl().equals(draft.getBaseUrl())) {
+            throw new ApiException(HttpStatus.CONFLICT, "MODEL_DRAFT_PROVIDER_STALE",
+                    "供应商协议或 API 地址已变更，请先重新保存草稿再发布");
+        }
+        validateHostedWebSearch(provider, draft.getSupportsWebSearch());
         versionMapper.findPublishedForUpdate(modelId);
         versionMapper.archivePublished(modelId);
         if (versionMapper.publishDraft(draft.getId(), request.expectedRevision(), Instant.now()) != 1) {
@@ -245,7 +253,8 @@ public class ModelAdministrationService {
                 entity.getUpstreamModel(), entity.getProtocolType(), entity.getBaseUrl(),
                 entity.getCredentialReference(), new ModelCapabilities(
                         entity.getContextWindow(), entity.getMaxOutputTokens(), entity.getSupportsReasoning(),
-                        entity.getSupportsTools(), entity.getSupportsVision(), entity.getSupportsJson()
+                        entity.getSupportsTools(), entity.getSupportsVision(), entity.getSupportsJson(),
+                        entity.getSupportsWebSearch()
                 ), entity.getCostCurrency(), costRates(
                         entity.getInputCostPerMillion(), entity.getCacheReadCostPerMillion(),
                         entity.getCacheWriteCostPerMillion(), entity.getOutputCostPerMillion()
@@ -269,6 +278,18 @@ public class ModelAdministrationService {
 
     private ApiException duplicateCode() {
         return new ApiException(HttpStatus.CONFLICT, "MODEL_CODE_EXISTS", "模型编码已经存在");
+    }
+
+    private void validateHostedWebSearch(ProviderEntity provider, ModelVersionValues values) {
+        validateHostedWebSearch(provider, values.supportsWebSearch());
+    }
+
+    private void validateHostedWebSearch(ProviderEntity provider, boolean enabled) {
+        if (enabled && !"ANTHROPIC".equals(provider.getProtocolType())
+                && !"RESPONSES".equals(provider.getProtocolType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "HOSTED_WEB_SEARCH_PROTOCOL_UNSUPPORTED",
+                    "供应商托管 Web Search 仅支持 Anthropic Messages 或 Responses 协议");
+        }
     }
 
     private ApiException draftConflict() {

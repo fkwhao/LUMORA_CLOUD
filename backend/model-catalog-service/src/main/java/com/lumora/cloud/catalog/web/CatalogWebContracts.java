@@ -79,6 +79,7 @@ public final class CatalogWebContracts {
             boolean supportsTools,
             boolean supportsVision,
             boolean supportsJson,
+            boolean supportsWebSearch,
             @NotBlank @Pattern(regexp = "[A-Z]{3}") String costCurrency,
             @NotNull @DecimalMin("0") BigDecimal uncachedInputCostPerMillion,
             @NotNull @DecimalMin("0") BigDecimal cachedInputCostPerMillion,

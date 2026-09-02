@@ -14,6 +14,7 @@ public record ModelVersionValues(
         boolean supportsTools,
         boolean supportsVision,
         boolean supportsJson,
+        boolean supportsWebSearch,
         String costCurrency,
         BigDecimal inputCostPerMillion,
         BigDecimal outputCostPerMillion,

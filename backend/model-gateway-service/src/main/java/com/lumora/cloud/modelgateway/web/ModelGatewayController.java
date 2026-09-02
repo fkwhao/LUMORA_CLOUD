@@ -1,7 +1,7 @@
 package com.lumora.cloud.modelgateway.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.lumora.cloud.api.catalog.ProviderProtocol;
+import com.lumora.cloud.modelgateway.domain.GatewayProtocol;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
 import com.lumora.cloud.modelgateway.diagnostics.GatewayDiagnosticsStore;
 import com.lumora.cloud.modelgateway.error.ApiException;
@@ -42,7 +42,7 @@ public class ModelGatewayController {
             ServerWebExchange exchange,
             @RequestBody Mono<JsonNode> body
     ) {
-        return invoke(exchange, body, ProviderProtocol.OPENAI_COMPATIBLE);
+        return invoke(exchange, body, GatewayProtocol.OPENAI_COMPATIBLE);
     }
 
     @PostMapping(value = "/responses", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -50,7 +50,7 @@ public class ModelGatewayController {
             ServerWebExchange exchange,
             @RequestBody Mono<JsonNode> body
     ) {
-        return invoke(exchange, body, ProviderProtocol.RESPONSES);
+        return invoke(exchange, body, GatewayProtocol.RESPONSES);
     }
 
     @PostMapping(value = "/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -58,13 +58,21 @@ public class ModelGatewayController {
             ServerWebExchange exchange,
             @RequestBody Mono<JsonNode> body
     ) {
-        return invoke(exchange, body, ProviderProtocol.ANTHROPIC);
+        return invoke(exchange, body, GatewayProtocol.ANTHROPIC);
+    }
+
+    @PostMapping(value = "/invoke", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Flux<org.springframework.core.io.buffer.DataBuffer>>> invokeLumora(
+            ServerWebExchange exchange,
+            @RequestBody Mono<JsonNode> body
+    ) {
+        return invoke(exchange, body, GatewayProtocol.LUMORA_INTERNAL);
     }
 
     private Mono<ResponseEntity<Flux<org.springframework.core.io.buffer.DataBuffer>>> invoke(
             ServerWebExchange exchange,
             Mono<JsonNode> body,
-            ProviderProtocol protocol
+            GatewayProtocol protocol
     ) {
         GatewayRequestContext context = access.requireUser(exchange.getRequest().getHeaders());
         return body.switchIfEmpty(Mono.error(new com.lumora.cloud.modelgateway.error.ApiException(

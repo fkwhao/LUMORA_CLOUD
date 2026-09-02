@@ -5,7 +5,7 @@ import com.lumora.cloud.api.catalog.CatalogContracts.CostRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
-import com.lumora.cloud.api.catalog.ProviderProtocol;
+import com.lumora.cloud.modelgateway.domain.GatewayProtocol;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +24,7 @@ class ChatRequestValidatorTest {
     void replacesLogicalModelCapsOutputAndForcesStreamUsage() throws Exception {
         var parsed = validator.parse(objectMapper.readTree("""
                 {"model":"LUMORA-GPT","stream":true,"max_tokens":9999,"stream_options":false,"messages":[]}
-                """), ProviderProtocol.OPENAI_COMPATIBLE);
+                """), GatewayProtocol.OPENAI_COMPATIBLE);
         var upstream = validator.upstreamBody(parsed, model("OPENAI_COMPATIBLE", true, true, true, true));
 
         assertThat(upstream.get("model").textValue()).isEqualTo("provider-model");
@@ -36,7 +36,7 @@ class ChatRequestValidatorTest {
     void rejectsUnsupportedToolsBeforeCallingProvider() throws Exception {
         var parsed = validator.parse(objectMapper.readTree("""
                 {"model":"lumora-gpt","tools":[{"type":"function"}],"messages":[]}
-                """), ProviderProtocol.OPENAI_COMPATIBLE);
+                """), GatewayProtocol.OPENAI_COMPATIBLE);
 
         assertThatThrownBy(() -> validator.upstreamBody(
                         parsed, model("OPENAI_COMPATIBLE", true, false, true, true)
@@ -57,7 +57,7 @@ class ChatRequestValidatorTest {
                   "system":"Be concise",
                   "messages":[{"role":"user","content":"hello"}]
                 }
-                """), ProviderProtocol.ANTHROPIC);
+                """), GatewayProtocol.ANTHROPIC);
 
         var upstream = validator.upstreamBody(
                 parsed, model("ANTHROPIC", true, true, true, true)
@@ -81,7 +81,7 @@ class ChatRequestValidatorTest {
                   "safety_identifier":"must-not-leak",
                   "input":[{"role":"user","content":"hello"}]
                 }
-                """), ProviderProtocol.RESPONSES);
+                """), GatewayProtocol.RESPONSES);
 
         var upstream = validator.upstreamBody(
                 parsed, model("RESPONSES", true, true, true, true)
@@ -98,7 +98,7 @@ class ChatRequestValidatorTest {
     void rejectsCallingModelThroughWrongProtocolEndpoint() throws Exception {
         var parsed = validator.parse(objectMapper.readTree("""
                 {"model":"lumora-gpt","messages":[]}
-                """), ProviderProtocol.OPENAI_COMPATIBLE);
+                """), GatewayProtocol.OPENAI_COMPATIBLE);
 
         assertThatThrownBy(() -> validator.upstreamBody(
                         parsed, model("ANTHROPIC", true, true, true, true)
@@ -106,6 +106,22 @@ class ChatRequestValidatorTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(error -> ((ApiException) error).getCode())
                 .isEqualTo("MODEL_PROTOCOL_MISMATCH");
+    }
+
+    @Test
+    void validatesLumoraInternalProtocolVersionAndOutputLimit() throws Exception {
+        var parsed = validator.parse(objectMapper.readTree("""
+                {
+                  "protocolVersion":"1",
+                  "model":"lumora-gpt",
+                  "stream":true,
+                  "messages":[],
+                  "generation":{"maxOutputTokens":256}
+                }
+                """), GatewayProtocol.LUMORA_INTERNAL);
+
+        assertThat(parsed.protocol()).isEqualTo(GatewayProtocol.LUMORA_INTERNAL);
+        assertThat(parsed.requestedMaxOutputTokens()).isEqualTo(256);
     }
 
     private ResolvedModelConfig model(
@@ -119,7 +135,7 @@ class ChatRequestValidatorTest {
         return new ResolvedModelConfig(
                 "lumora-gpt", "Lumora GPT", null, "pricing-v1", "provider", protocol,
                 "https://api.example.com/v1", "TEST_KEY", "provider-model",
-                new ModelCapabilities(8_192, 512, reasoning, tools, vision, json),
+                new ModelCapabilities(8_192, 512, reasoning, tools, vision, json, false),
                 "USD", new CostRates(one, one, one, one), null,
                 new QuotaRates(one, one, one, one, one), null, Instant.now()
         );

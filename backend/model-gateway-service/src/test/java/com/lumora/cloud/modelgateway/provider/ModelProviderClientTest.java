@@ -85,7 +85,7 @@ class ModelProviderClientTest {
         return new ResolvedModelConfig(
                 "test", "Test", null, "pricing", "provider", protocol,
                 "https://api.example.com/v1", "credential", "upstream-model",
-                new ModelCapabilities(8_192, 512, true, true, true, true),
+                new ModelCapabilities(8_192, 512, true, true, true, true, false),
                 "USD", new CostRates(one, one, one, one), null,
                 new QuotaRates(one, one, one, one, one), null, Instant.now()
         );

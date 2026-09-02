@@ -2,6 +2,7 @@ package com.lumora.cloud.catalog.web;
 
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedProviderCredential;
+import com.lumora.cloud.api.catalog.CatalogContracts.PublishedModelReference;
 import com.lumora.cloud.catalog.security.InternalRequestAuthorizer;
 import com.lumora.cloud.catalog.service.ProviderCredentialService;
 import com.lumora.cloud.catalog.service.PublishedCatalogService;
@@ -37,6 +38,12 @@ public class CatalogInternalController {
     public List<ResolvedModelConfig> models(HttpServletRequest request) {
         authorizer.requireModelGateway(request);
         return catalogService.resolvedModels();
+    }
+
+    @GetMapping("/model-references")
+    public List<PublishedModelReference> modelReferences(HttpServletRequest request) {
+        authorizer.requireModelReferenceConsumer(request);
+        return catalogService.publishedModelReferences();
     }
 
     @GetMapping("/models/{modelCode}")

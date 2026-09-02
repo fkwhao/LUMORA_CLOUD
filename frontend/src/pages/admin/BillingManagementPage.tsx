@@ -1,6 +1,7 @@
 import {
   Button,
   Card,
+  Checkbox,
   Chip,
   Input,
   Label,
@@ -21,6 +22,7 @@ import {
   Sparkles,
   UserPlus,
   WalletCards,
+  Boxes,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -39,11 +41,13 @@ import {
 } from "../../api/billing";
 import type { AdminUser } from "../../api/users";
 import { useAdminUserSearch } from "../../features/admin/useAdminUserSearch";
+import { listModels, type AdminModel } from "../../api/catalog";
 
 export function BillingManagementPage() {
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [subscriptions, setSubscriptions] = useState<BillingSubscription[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [catalogModels, setCatalogModels] = useState<AdminModel[]>([]);
   const {
     query: userQuery,
     setQuery: setUserQuery,
@@ -74,14 +78,16 @@ export function BillingManagementPage() {
     setLoading(true);
     setError(null);
     try {
-      const [planData, subscriptionData, orderData] = await Promise.all([
+      const [planData, subscriptionData, orderData, modelData] = await Promise.all([
         listAdminPlans(),
         listAdminSubscriptions(),
         listAdminOrders(),
+        listModels(),
       ]);
       setPlans(planData);
       setSubscriptions(subscriptionData);
       setOrders(orderData);
+      setCatalogModels(modelData.filter((model) => model.status === "ACTIVE" && model.published));
       setVersions({});
     } catch (reason) {
       setError(message(reason));
@@ -108,6 +114,7 @@ export function BillingManagementPage() {
         monthlyPriceMinor: minorUnits(form, "monthlyPrice"),
         currency: textValue(form, "currency"),
         weeklyQuota: numberValue(form, "weeklyQuota"),
+        modelCodes: stringValues(form, "modelCodes"),
       });
       upsertPlan(created);
       formElement.reset();
@@ -131,6 +138,7 @@ export function BillingManagementPage() {
         monthlyPriceMinor: minorUnits(form, "monthlyPrice"),
         currency: textValue(form, "currency"),
         weeklyQuota: numberValue(form, "weeklyQuota"),
+        modelCodes: stringValues(form, "modelCodes"),
       });
       upsertPlan(published);
       setVersions((current) => {
@@ -265,6 +273,7 @@ export function BillingManagementPage() {
                   <Info label="每周额度" value={formatQuota(plan.weeklyQuota)} />
                   <Info label="当前发布版本" value={`v${plan.versionNo}`} />
                 </div>
+                <PlanModelSummary plan={plan} />
                 <div className="flex flex-wrap gap-2">
                   <Button
                     isDisabled={pending !== null}
@@ -299,9 +308,10 @@ export function BillingManagementPage() {
               plan={versionPlan}
               onCancel={() => setVersionPlanId(null)}
               onSubmit={createVersion}
+              models={catalogModels}
             />
           ) : (
-            <CreatePlanForm key={formVersion} pending={pending !== null} onSubmit={createPlan} />
+            <CreatePlanForm key={formVersion} models={catalogModels} pending={pending !== null} onSubmit={createPlan} />
           )}
 
           <GrantForm
@@ -327,7 +337,11 @@ export function BillingManagementPage() {
   );
 }
 
-function CreatePlanForm({ pending, onSubmit }: { pending: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function CreatePlanForm({ pending, onSubmit, models }: {
+  pending: boolean;
+  models: AdminModel[];
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
   return (
     <Card variant="default">
       <Card.Header>
@@ -341,7 +355,7 @@ function CreatePlanForm({ pending, onSubmit }: { pending: boolean; onSubmit: (ev
             <TextField fullWidth isRequired name="code"><Label>套餐编码</Label><Input fullWidth placeholder="例如 lumora-pro" /></TextField>
           </div>
           <TextField fullWidth name="description"><Label>套餐说明</Label><TextArea fullWidth placeholder="面向用户展示的权益说明" rows={2} /></TextField>
-          <PriceAndQuotaFields />
+          <PriceAndQuotaFields models={models} />
           <Button fullWidth isDisabled={pending} type="submit" variant="primary">
             {pending ? "正在保存…" : "创建并发布套餐"}
           </Button>
@@ -351,8 +365,9 @@ function CreatePlanForm({ pending, onSubmit }: { pending: boolean; onSubmit: (ev
   );
 }
 
-function PlanVersionForm({ plan, pending, onSubmit, onCancel }: {
+function PlanVersionForm({ plan, pending, onSubmit, onCancel, models }: {
   plan: BillingPlan;
+  models: AdminModel[];
   pending: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
@@ -365,7 +380,7 @@ function PlanVersionForm({ plan, pending, onSubmit, onCancel }: {
       </Card.Header>
       <Card.Content>
         <form className="space-y-4" onSubmit={onSubmit}>
-          <PriceAndQuotaFields plan={plan} />
+          <PriceAndQuotaFields models={models} plan={plan} />
           <div className="flex justify-end gap-2">
             <Button onPress={onCancel} variant="tertiary">取消</Button>
             <Button isDisabled={pending} type="submit" variant="primary">{pending ? "正在发布…" : "确认发布新版本"}</Button>
@@ -376,7 +391,7 @@ function PlanVersionForm({ plan, pending, onSubmit, onCancel }: {
   );
 }
 
-function PriceAndQuotaFields({ plan }: { plan?: BillingPlan }) {
+function PriceAndQuotaFields({ plan, models }: { plan?: BillingPlan; models: AdminModel[] }) {
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -394,7 +409,57 @@ function PriceAndQuotaFields({ plan }: { plan?: BillingPlan }) {
         <Label>每周套餐额度</Label>
         <Input defaultValue={plan ? String(plan.weeklyQuota) : "100"} fullWidth min="0.000001" step="0.000001" type="number" />
       </TextField>
+      <PlanModelFields models={models} plan={plan} />
     </>
+  );
+}
+
+function PlanModelFields({ models, plan }: { models: AdminModel[]; plan?: BillingPlan }) {
+  const selected = new Set(
+    plan?.modelCodes.length
+      ? plan.modelCodes
+      : plan?.modelAccessMode === "ALL_PUBLISHED_LEGACY"
+        ? models.map((model) => model.code)
+        : [],
+  );
+  return (
+    <fieldset className="space-y-3 rounded-xl border border-separator p-3">
+      <legend className="px-1 text-sm font-medium">套餐包含模型</legend>
+      <p className="text-xs text-muted">按套餐版本冻结；后续修改只影响购买新版本的用户。</p>
+      {models.length === 0 ? (
+        <p className="rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">请先在模型目录发布至少一个可用模型。</p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {models.map((model) => (
+            <Checkbox defaultSelected={selected.has(model.code)} key={model.code} name="modelCodes" value={model.code}>
+              <Checkbox.Content>
+                <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                <div className="min-w-0">
+                  <Label>{model.published?.displayName ?? model.code}</Label>
+                  <p className="truncate text-xs text-muted">{model.code}</p>
+                </div>
+              </Checkbox.Content>
+            </Checkbox>
+          ))}
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
+function PlanModelSummary({ plan }: { plan: BillingPlan }) {
+  if (plan.modelAccessMode === "ALL_PUBLISHED_LEGACY") {
+    return (
+      <div className="flex items-center gap-2 rounded-xl bg-warning-soft px-3 py-2 text-xs text-warning">
+        <Boxes size={14} /> 历史兼容版本：可使用全部已发布模型
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted">包含模型</span>
+      {plan.modelCodes.map((code) => <Chip key={code} size="sm" variant="soft">{code}</Chip>)}
+    </div>
   );
 }
 
@@ -493,7 +558,7 @@ function PlanHistory({ versions, loading }: { versions?: BillingPlan[]; loading:
           {versions.map((version, index) => (
             <div className="flex items-center gap-3 border-b border-separator pb-3 last:border-0 last:pb-0" key={version.planVersionId}>
               <Chip color={index === 0 ? "success" : "default"} size="sm" variant="soft">v{version.versionNo}</Chip>
-              <div className="min-w-0 flex-1"><p className="text-sm">{formatMoney(version.monthlyPriceMinor, version.currency)} / 月</p><p className="text-xs text-muted">每周 {formatQuota(version.weeklyQuota)}</p></div>
+              <div className="min-w-0 flex-1"><p className="text-sm">{formatMoney(version.monthlyPriceMinor, version.currency)} / 月</p><p className="text-xs text-muted">每周 {formatQuota(version.weeklyQuota)} · {version.modelAccessMode === "ALL_PUBLISHED_LEGACY" ? "全部已发布模型（兼容）" : `${version.modelCodes.length} 个模型`}</p></div>
               <span className="text-xs text-muted">ID {version.planVersionId}</span>
             </div>
           ))}
@@ -610,6 +675,10 @@ function localDateTimeToIso(value: string): string {
 
 function textValue(form: FormData, name: string): string {
   return String(form.get(name) ?? "").trim();
+}
+
+function stringValues(form: FormData, name: string): string[] {
+  return form.getAll(name).map((value) => String(value).trim()).filter(Boolean);
 }
 
 function numberValue(form: FormData, name: string): number {
