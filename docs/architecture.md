@@ -94,3 +94,8 @@ Desktop 已接入可选登录、套餐只读查询、套餐模型同步以及独
 本地 BYOK 三协议链路不受影响。云端模型版本可声明供应商托管 Web Search 能力，Model Gateway 已完成
 Responses/Anthropic 上游工具注入以及搜索进度、来源引用事件归一化，Desktop 复用现有工作日志和引用
 展示。真实第三方支付渠道与供应商按次搜索费用计费仍待实现。
+
+服务保护已补齐为三层：Cloud Gateway/各业务服务按 URL 做入口 QPS 流控；Model Gateway 与 Billing 的
+OpenFeign 调用按具体方法做异常比例熔断并 fail closed；每条动态上游路由继续按 route ID 独立熔断。
+静态规则由 Nacos JSON 持久化，Dashboard 仅用于观察和临时诊断。本地 Mock Provider 可在不消耗真实
+API 额度的情况下验证负载分布、故障转移、流控、熔断及 Usage/账本/额度桶一致性。

@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.lumora.cloud.api.catalog.CatalogClient;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
+import com.lumora.cloud.api.fallback.RemoteServiceUnavailableException;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import feign.FeignException;
@@ -44,7 +45,19 @@ public class ModelConfigCache {
                         HttpStatus.SERVICE_UNAVAILABLE, "MODEL_CATALOG_INVALID_RESPONSE",
                         "模型目录返回了空配置"
                 )))
-                .onErrorMap(FeignException.class, exception -> mapCatalogFailure(normalized, exception));
+                .onErrorMap(FeignException.class, exception -> mapCatalogFailure(normalized, exception))
+                .onErrorMap(RemoteServiceUnavailableException.class, exception -> {
+                    log.warn(
+                            "Model catalog protection activated modelCode={} service={} operation={}",
+                            normalized, exception.getServiceName(), exception.getOperation()
+                    );
+                    return new ApiException(
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                            "MODEL_CATALOG_PROTECTED",
+                            "模型目录服务正在熔断保护中，请稍后重试",
+                            exception
+                    );
+                });
     }
 
     private ApiException mapCatalogFailure(String modelCode, FeignException exception) {

@@ -1,6 +1,7 @@
 package com.lumora.cloud.modelgateway.service;
 
 import com.lumora.cloud.api.catalog.CatalogClient;
+import com.lumora.cloud.api.fallback.RemoteServiceUnavailableException;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import feign.FeignException;
@@ -89,6 +90,18 @@ class ModelConfigCacheTest {
         assertApiError(
                 cache.resolve("test-model"), HttpStatus.SERVICE_UNAVAILABLE,
                 "MODEL_CATALOG_BAD_RESPONSE"
+        );
+    }
+
+    @Test
+    void mapsSentinelFallbackToProtectedCatalogError() {
+        when(catalogClient.resolve("test-model")).thenThrow(new RemoteServiceUnavailableException(
+                "lumora-model-catalog-service", "resolve", new Exception("blocked")
+        ));
+
+        assertApiError(
+                cache.resolve("test-model"), HttpStatus.SERVICE_UNAVAILABLE,
+                "MODEL_CATALOG_PROTECTED"
         );
     }
 

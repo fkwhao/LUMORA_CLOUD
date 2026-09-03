@@ -63,3 +63,6 @@ Desktop 云端模型适配已经实现；真实第三方支付渠道仍待接入
 `docker compose up -d --build` 一次启动。真实 `.env` 和 `deploy/data/` 已加入 Git 忽略规则，
 不应提交到仓库；Sentinel JAR 会直接封装进本地镜像，不会落到宿主机目录。完整步骤见
 [中间件部署说明](deploy/README.md)。
+
+Sentinel/Nacos 规则和不访问真实供应商的本地 Mock 压测方式见
+[本地保护与压测](tests/load/README.md)。

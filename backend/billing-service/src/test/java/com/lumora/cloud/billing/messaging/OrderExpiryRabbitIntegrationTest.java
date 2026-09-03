@@ -137,6 +137,12 @@ class OrderExpiryRabbitIntegrationTest {
             amqpAdmin.deleteQueue(delayQueueName);
             amqpAdmin.deleteQueue(readyQueueName);
             orderMapper.deleteById(orderId);
+            jdbcTemplate.update("""
+                    DELETE scope
+                    FROM billing_plan_version_model scope
+                    INNER JOIN billing_plan_version version ON version.id = scope.plan_version_id
+                    WHERE version.plan_id = ?
+                    """, plan.planId());
             jdbcTemplate.update("DELETE FROM billing_plan_version WHERE plan_id = ?", plan.planId());
             jdbcTemplate.update("DELETE FROM billing_plan WHERE id = ?", plan.planId());
         }

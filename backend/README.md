@@ -20,6 +20,9 @@ Gateway 的 JWT 校验、会话撤销检查和可信身份头注入。Billing Se
 Model Catalog Service 也已完成供应商管理、模型草稿、发布版本、启停、用户可见目录与内部解析接口。
 Model Gateway 已完成 Chat Completions、OpenAI Responses 与 Anthropic Messages 调用闭环，支持
 普通 JSON 与 SSE、分布式并发限制、请求幂等、额度预占、权威 Usage 结算、失败补偿和 Redis 脱敏诊断。
+Cloud Gateway 与各业务服务已接入 Nacos 持久化的 Sentinel HTTP 流控；Model Gateway、Billing 的
+OpenFeign 控制调用使用异常比例熔断和 fail-closed Fallback，且不会伪造配置或账务成功结果。上游模型
+路由继续按动态路由 ID 独立熔断，避免一个供应商账号故障拖垮整个逻辑模型。
 钱包套餐支付已经完成，真实第三方支付渠道留在后续迭代。
 
 Billing 对外接口按权限分为：
@@ -122,6 +125,10 @@ Sentinel 和 RabbitMQ 连接虚拟机 `192.168.100.132`。本地 YAML 只保留 
 提交。Nacos 中的配置只引用这些变量，不保存真实密码。也可以在 IntelliJ IDEA Run Configuration
 中直接设置同名环境变量覆盖它。未来把 Java 服务
 部署到虚拟机时，再使用 `/etc/lumora-cloud/lumora-cloud.env`，由 systemd 的 `EnvironmentFile` 加载。
+
+Sentinel 的五组流控/熔断 JSON 也需要发布到同一 Group，Dashboard 修改不作为持久化来源。完整 Data ID
+清单见 [`deploy/nacos-config`](../deploy/nacos-config/README.md)，本地 Mock Provider 与低强度压测步骤见
+[`tests/load`](../tests/load/README.md)。
 
 `LUMORA_CREDENTIAL_MASTER_KEY` 是 Model Catalog 的平台级凭据主密钥，必须是随机 32 字节的 Base64，
 需要稳定保存并安全备份。它只用于加密供应商 API Key，不写入 Nacos；未经密钥迁移不能直接更换。

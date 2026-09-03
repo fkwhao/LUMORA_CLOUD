@@ -1,0 +1,38 @@
+[
+  {
+    "resource": "/api/app/model/v1/invoke",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 100.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  },
+  {
+    "resource": "/api/app/model/v1/chat/completions",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 50.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  },
+  {
+    "resource": "/api/app/model/v1/responses",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 50.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  },
+  {
+    "resource": "/api/app/model/v1/messages",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 50.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  }
+]

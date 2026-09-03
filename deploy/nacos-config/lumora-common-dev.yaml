@@ -43,8 +43,33 @@ spring:
           max-interval: 5000ms
   cloud:
     sentinel:
+      enabled: true
+      eager: true
       transport:
         dashboard: ${LUMORA_SENTINEL_DASHBOARD:192.168.100.132:8858}
+      datasource:
+        flow-rules:
+          nacos:
+            server-addr: ${LUMORA_NACOS_ADDR:192.168.100.132:8848}
+            username: ${LUMORA_NACOS_USERNAME:nacos}
+            password: ${LUMORA_NACOS_PASSWORD}
+            group-id: LUMORA_CLOUD
+            data-id: ${spring.application.name}-sentinel-flow-dev.json
+            data-type: json
+            rule-type: flow
+        degrade-rules:
+          nacos:
+            server-addr: ${LUMORA_NACOS_ADDR:192.168.100.132:8848}
+            username: ${LUMORA_NACOS_USERNAME:nacos}
+            password: ${LUMORA_NACOS_PASSWORD}
+            group-id: LUMORA_CLOUD
+            data-id: ${spring.application.name}-sentinel-degrade-dev.json
+            data-type: json
+            rule-type: degrade
+
+feign:
+  sentinel:
+    enabled: true
 
 mybatis-plus:
   configuration:

@@ -283,6 +283,16 @@ RPM/TPM 已满、熔断、鉴权失败、429、超时、连接失败或 5xx 时�
 返回后不再切换路由，避免重复内容和重复计费。管理端诊断记录实际命中的账号和路由，但仍不记录 Prompt、
 响应正文或密钥。
 
+服务间保护与动态路由保护相互独立：Cloud Gateway 和业务服务的 HTTP URL 使用 Nacos `flow` JSON
+执行入口 QPS 流控；Model Gateway → Catalog/Billing、Billing → Catalog 的 OpenFeign 方法使用 Nacos
+`degrade` JSON 执行异常比例熔断。Feign Fallback 只负责把 Sentinel 阻断转换为明确的 503 领域错误，
+原始下游 HTTP 业务错误继续按原语义处理，绝不返回伪造的模型配置、额度预占、结算或释放结果。Billing
+预占调用被保护时在调用上游前失败；已产生的结算/释放命令仍由 Redis 恢复队列幂等重试。
+
+Sentinel 的全局 `DegradeRuleManager` 同时承载 Nacos 静态 Feign 规则和按路由动态生成的规则。Nacos
+刷新可能替换内存规则集合，因此 Model Gateway 在路由进入前校验并重新合并当前动态规则，确保配置
+中心刷新不会无意关闭上游路由熔断。静态规则以 Nacos 为事实来源，Dashboard 修改仅用于临时诊断。
+
 Cloud 支持 `OPENAI_COMPATIBLE`、`RESPONSES` 和 `ANTHROPIC` Provider。管理端创建 Provider 时直接
 提交 API Key；API Key 只以密文进入凭据表，不进入模型版本、Redis 发布快照、Nacos、日志或下游响应。
 旧环境变量引用仅作为已有 Provider 的兼容回退。凭据轮换保持引用稳定，不要求重新发布模型；Model
@@ -551,3 +561,8 @@ Desktop 领域模型预留以下类型：
 7. 将 Desktop 接入可选登录、只读套餐/额度/用量、外部控制台入口、套餐模型同步和
    `LOCAL_BYOK/CLOUD_MANAGED` 模型来源切换（首版已完成）。
 8. 完成负载与故障验证后，再评估独立 Payment Service、Transactional Outbox 或 Cloud Chat。
+
+本地负载与故障验证使用仓库内的回环地址 Mock Provider，不发送真实供应商请求。测试覆盖低并发成功
+链路、路由分布、明确拒绝释放、429/5xx/超时故障转移、入口流控、动态路由与 Feign 熔断，以及成功
+请求对应的 Usage、`SETTLE` 流水、额度桶已用增量和预占归零。详细命令与安全边界见
+[`../tests/load/README.md`](../tests/load/README.md)。

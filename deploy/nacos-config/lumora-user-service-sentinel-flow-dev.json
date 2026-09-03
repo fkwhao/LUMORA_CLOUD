@@ -1,0 +1,29 @@
+[
+  {
+    "resource": "/api/app/auth/login",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 40.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  },
+  {
+    "resource": "/api/app/auth/register",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 15.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  },
+  {
+    "resource": "/api/app/auth/refresh",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 80.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  }
+]

@@ -90,7 +90,11 @@ public class RouteCircuitBreaker {
     }
 
     private synchronized void ensureRule(String resource) {
-        if (rules.containsKey(resource)) {
+        DegradeRule activeRule = DegradeRuleManager.getRules().stream()
+                .filter(existing -> resource.equals(existing.getResource()))
+                .findFirst()
+                .orElse(null);
+        if (activeRule != null && matchesConfiguration(activeRule)) {
             return;
         }
         DegradeRule rule = new DegradeRule(resource)
@@ -105,6 +109,14 @@ public class RouteCircuitBreaker {
                 .toList());
         merged.addAll(rules.values());
         DegradeRuleManager.loadRules(merged);
+    }
+
+    private boolean matchesConfiguration(DegradeRule rule) {
+        return rule.getGrade() == RuleConstant.DEGRADE_GRADE_EXCEPTION_RATIO
+                && Double.compare(rule.getCount(), properties.getFailureRatio()) == 0
+                && rule.getMinRequestAmount() == properties.getMinimumCalls()
+                && rule.getStatIntervalMs() == properties.getStatisticalWindowSeconds() * 1_000
+                && rule.getTimeWindow() == properties.getOpenDurationSeconds();
     }
 
     private boolean recordsFailure(Throwable error) {

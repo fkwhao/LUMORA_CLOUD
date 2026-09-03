@@ -1,0 +1,56 @@
+[
+  {
+    "resource": "GET:http://lumora-model-catalog-service/internal/catalog/models/{modelCode}",
+    "grade": 1,
+    "count": 0.5,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 30000,
+    "slowRatioThreshold": 1.0
+  },
+  {
+    "resource": "GET:http://lumora-model-catalog-service/internal/catalog/credentials/{credentialReference}",
+    "grade": 1,
+    "count": 0.5,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 30000,
+    "slowRatioThreshold": 1.0
+  },
+  {
+    "resource": "POST:http://lumora-billing-service/internal/billing/reservations",
+    "grade": 1,
+    "count": 0.5,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 30000,
+    "slowRatioThreshold": 1.0
+  },
+  {
+    "resource": "POST:http://lumora-billing-service/internal/billing/reservations/{requestId}/settle",
+    "grade": 1,
+    "count": 0.5,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 30000,
+    "slowRatioThreshold": 1.0
+  },
+  {
+    "resource": "POST:http://lumora-billing-service/internal/billing/reservations/{requestId}/release",
+    "grade": 1,
+    "count": 0.5,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 30000,
+    "slowRatioThreshold": 1.0
+  },
+  {
+    "resource": "POST:http://lumora-billing-service/internal/billing/reservations/{requestId}/pending",
+    "grade": 1,
+    "count": 0.5,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 30000,
+    "slowRatioThreshold": 1.0
+  }
+]

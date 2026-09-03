@@ -1,0 +1,20 @@
+[
+  {
+    "resource": "/internal/catalog/models",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 250.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  },
+  {
+    "resource": "/internal/catalog/model-references",
+    "limitApp": "default",
+    "grade": 1,
+    "count": 100.0,
+    "strategy": 0,
+    "controlBehavior": 0,
+    "clusterMode": false
+  }
+]

@@ -21,5 +21,7 @@ deploy/data/
 !**/.env.example
 
 *.log
+__pycache__/
+*.py[cod]
 .DS_Store
 Thumbs.db

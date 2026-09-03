@@ -3,6 +3,7 @@ package com.lumora.cloud.modelgateway.service;
 import com.lumora.cloud.api.billing.BillingClient;
 import com.lumora.cloud.api.billing.BillingContracts.ReservationResponse;
 import com.lumora.cloud.api.billing.BillingContracts.ReserveRequest;
+import com.lumora.cloud.api.fallback.RemoteServiceUnavailableException;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import feign.FeignException;
 import org.springframework.http.HttpStatus;
@@ -26,7 +27,13 @@ public class BillingControlService {
                         HttpStatus.SERVICE_UNAVAILABLE, "BILLING_INVALID_RESPONSE",
                         "计费服务返回了空响应"
                 )))
-                .onErrorMap(FeignException.class, this::billingError);
+                .onErrorMap(FeignException.class, this::billingError)
+                .onErrorMap(RemoteServiceUnavailableException.class, exception -> new ApiException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "BILLING_PROTECTED",
+                        "计费服务正在熔断保护中，请稍后重试",
+                        exception
+                ));
     }
 
     private ApiException billingError(FeignException exception) {

@@ -1,3 +1,5 @@
 com.lumora.cloud.common.context.FeignContextAutoConfiguration
 com.lumora.cloud.common.context.ReactiveFeignServiceAuthAutoConfiguration
 com.lumora.cloud.common.context.ServletUserContextAutoConfiguration
+com.lumora.cloud.common.sentinel.SentinelReactiveBlockAutoConfiguration
+com.lumora.cloud.common.sentinel.SentinelServletBlockAutoConfiguration
