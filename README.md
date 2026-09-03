@@ -39,7 +39,8 @@ pnpm dev
 网页注册、登录、会话恢复和退出已经连接 Cloud Gateway 与 User Service；用户侧套餐、周期额度、用量、
 额度流水、套餐目录和订单已经连接 Billing Service；运营总览已接入 User、Billing 与 Model Catalog 的
 真实领域统计。用户用量和额度支持“当前额度周期 / 本月”完整汇总与最近 100 条明细，每日 Token 图表
-支持自然周/月切换；网关诊断采用独立的最近 24 小时分桶统计，不受明细数量上限影响。后端已经完成用户认证闭环、
+支持自然周/月切换；网关诊断采用独立的最近 24 小时分桶统计，并以单个有界 List 保存最近 100 条完成态
+脱敏明细，不再生成逐请求 Redis Key。后端已经完成用户认证闭环、
 Billing Service 的套餐、额度、订单与开发环境测试支付状态机，
 Model Catalog Service 的供应商与模型发布，以及 Model Gateway 首版调用闭环：模型解析、额度预占、
 并发控制、LUMORA Internal Protocol v1、Chat Completions / Responses / Anthropic Messages 适配、

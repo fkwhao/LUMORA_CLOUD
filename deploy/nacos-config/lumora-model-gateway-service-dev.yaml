@@ -41,9 +41,11 @@ lumora:
       statistical-window-seconds: 30
       open-duration-seconds: 10
     diagnostics:
-      retention: P7D
       summary-window: PT24H
-      max-records: 1000
+      summary-bucket: PT5M
+      bucket-retention: PT26H
+      recent-retention: PT24H
+      recent-limit: 100
 
 logging:
   level:

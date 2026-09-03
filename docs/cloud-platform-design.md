@@ -325,14 +325,19 @@ Local Core / Python Agent
 ```
 
 内部请求统一表达消息文本/图片块、工具定义、Tool Call/Tool Result、推理强度、最大输出、供应商托管
-Web Search 开关和可选的
-`providerState`，不携带供应商协议类型、上游模型 ID、Base URL 或 API Key。内部响应统一表达正文、
+Web Search 开关、可选的 `responseSchema` 和可选的 `providerState`，不携带供应商协议类型、上游
+模型 ID、Base URL 或 API Key。内部响应统一表达正文、
 推理、工具调用和标准化 TokenUsage；流式响应使用版本化事件 `content_delta`、`reasoning_delta`、
 `tool_call_delta`、`web_search_started`、`web_search_progress`、`web_search_completed`、
 `web_search_failed`、`usage`、`completed`。搜索完成事件最多携带 12 条标题和 URL，供 Desktop 的
 工作日志与引用界面复用。`protocolVersion` 当前固定为 `1`，未知版本必须明确拒绝，不能
 静默按 OpenAI 格式解释。兼容原生协议的旧端点暂时保留给联调和迁移使用，但 Desktop 套餐链路只调用
 统一入口。
+
+`generation.responseSchema` 是内部协议的结构化输出偏好。Model Gateway 在模型声明支持 JSON 时，
+将其映射为 Responses / Anthropic 的 JSON Schema，通用 OpenAI Compatible 则使用兼容性更广的
+JSON Object 模式；不支持 JSON 的模型保留提示词路径，由本地 Agent 执行一次有界格式修复和最终
+Schema 校验。Memory 提取请求始终关闭 Web Search，避免检索副作用和额外计费。
 
 托管 Web Search 是模型发布版本的显式能力，只在运营人员启用后允许 Desktop 使用。Model Gateway
 当前分别将其映射为 Responses 的 `web_search` 工具和 Anthropic Messages 的
@@ -408,8 +413,8 @@ Dashboard 聚合明显复杂时，才增加只做查询聚合的 `admin-bff`；�
 
 管理端 `/admin/gateway` 的统计卡片固定表示最近 24 小时：请求状态、耗时总和及耗时直方图按 5 分钟桶
 累计，读取成本固定且不受明细保留上限影响；P95 是直方图桶上界得到的近似值。成功率只使用已成功和
-已失败请求作为分母，运行中与客户端取消不参与。下方诊断明细独立限制为最近 100 条，仍不记录 Prompt、
-响应正文或 API Key。
+已失败请求作为分母，运行中与客户端取消不参与。下方只展示最近 100 条完成态诊断，运行中的请求只在
+统计卡片中体现；明细仍不记录 Prompt、响应正文或 API Key。
 
 前端组件体系采用 HeroUI v3 和 Tailwind CSS v4。HeroUI 用于统一按钮、表单、表格、Tabs、Drawer、
 Modal 等基础交互和可访问性行为。首版采用 HeroUI 原生默认暗色主题和组件外观，控制台信息架构、
@@ -510,8 +515,9 @@ Redis 负责：
 - 短期幂等结果和模型配置缓存。
 - 额度热点快照与短期预占加速。
 - 必要的分布式锁。
-- 最近模型调用的脱敏诊断记录与时间索引；只含 Trace、用户 ID、模型/供应商、状态和耗时。
-- 网关诊断的 5 分钟滚动统计桶；24 小时查询只读取固定数量的桶，不扫描全部请求明细。
+- 最近 100 条完成态模型调用的单个有界 List；只含 Trace、用户 ID、模型/供应商、状态和耗时，空闲
+  24 小时后整体过期，不创建逐请求 Key 或永久时间索引。
+- 网关诊断的 5 分钟滚动统计桶；桶保留 26 小时，24 小时查询只读取固定数量的桶，不扫描请求明细。
 
 MySQL 负责：
 

@@ -34,7 +34,7 @@ export function GatewayDiagnosticsPage() {
         <Metric icon={TriangleAlert} label="失败 / 运行中" value={summary ? `${summary.failed} / ${summary.running}` : "—"} />
       </section>
       <Card variant="default">
-        <Card.Header><div><Card.Title>最近请求</Card.Title><Card.Description>{summary ? `最多显示最近 100 条 · 24 小时 P95（近似）${duration(summary.p95DurationMillis)}` : "等待数据"}</Card.Description></div></Card.Header>
+        <Card.Header><div><Card.Title>最近完成请求</Card.Title><Card.Description>{summary ? `最多显示最近 100 条 · 运行中请求仅计入上方统计 · 24 小时 P95（近似）${duration(summary.p95DurationMillis)}` : "等待数据"}</Card.Description></div></Card.Header>
         <Card.Content className="gap-0 pt-1">
           {loading ? <p className="py-12 text-center text-sm text-muted">正在读取诊断数据…</p> : !data?.records.length ? <p className="py-12 text-center text-sm text-muted">暂无模型请求记录</p> : data.records.map((record) => (
             <div className="grid gap-3 border-b border-separator py-4 last:border-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.8fr)_minmax(0,.8fr)_auto] lg:items-center" key={record.traceId}>

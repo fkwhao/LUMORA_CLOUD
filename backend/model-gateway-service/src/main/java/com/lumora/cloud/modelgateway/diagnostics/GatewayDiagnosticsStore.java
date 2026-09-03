@@ -5,9 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.Range;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.ReactiveHashOperations;
+import org.springframework.data.redis.core.ReactiveListOperations;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -21,12 +25,20 @@ import java.util.Map;
 public class GatewayDiagnosticsStore {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayDiagnosticsStore.class);
-    private static final String RECORD_PREFIX = "lumora:model-gateway:diagnostics:record:";
-    private static final String INDEX = "lumora:model-gateway:diagnostics:index";
+    private static final String RECENT = "lumora:model-gateway:diagnostics:recent";
     private static final String BUCKET_PREFIX = "lumora:model-gateway:diagnostics:bucket:";
+    private static final String LEGACY_RECORD_PREFIX = "lumora:model-gateway:diagnostics:record:";
+    private static final String LEGACY_INDEX = "lumora:model-gateway:diagnostics:index";
+    private static final DefaultRedisScript<Long> APPEND_RECENT_SCRIPT = new DefaultRedisScript<>("""
+            redis.call('LPUSH', KEYS[1], ARGV[1])
+            redis.call('LTRIM', KEYS[1], 0, tonumber(ARGV[2]) - 1)
+            redis.call('PEXPIRE', KEYS[1], ARGV[3])
+            return redis.call('LLEN', KEYS[1])
+            """, Long.class);
 
     private final ReactiveStringRedisTemplate redis;
     private final ReactiveHashOperations<String, String, String> buckets;
+    private final ReactiveListOperations<String, String> recent;
     private final ObjectMapper objectMapper;
     private final GatewayDiagnosticsProperties properties;
 
@@ -37,11 +49,12 @@ public class GatewayDiagnosticsStore {
     ) {
         this.redis = redis;
         this.buckets = redis.opsForHash();
+        this.recent = redis.opsForList();
         this.objectMapper = objectMapper;
         this.properties = properties;
     }
 
-    public Mono<Void> started(
+    public Mono<GatewayDiagnosticRecord> started(
             GatewayRequestContext context, String modelCode, String protocol, boolean stream
     ) {
         Instant now = Instant.now();
@@ -49,41 +62,56 @@ public class GatewayDiagnosticsStore {
                 context.traceId(), context.clientRequestId(), context.userId(), modelCode,
                 "", "", "", protocol, stream, "RUNNING", null, null, 0L, now, null
         );
-        return write(record)
-                .then(redis.opsForZSet().add(INDEX, record.traceId(), now.toEpochMilli()))
-                .then(recordStarted(now))
-                .then(prune(now))
-                .onErrorResume(error -> ignoredWriteFailure("start", context.traceId(), error));
+        return recordStarted(now)
+                .onErrorResume(error -> ignoredWriteFailure("start metrics", context.traceId(), error))
+                .thenReturn(record);
     }
 
-    public Mono<Void> succeeded(String traceId, String providerCode, String routeId, String routeName, int upstreamStatus) {
-        return complete(traceId, providerCode, routeId, routeName, "SUCCEEDED", upstreamStatus, null);
+    public Mono<Void> succeeded(
+            GatewayDiagnosticRecord started,
+            String providerCode,
+            String routeId,
+            String routeName,
+            int upstreamStatus
+    ) {
+        return complete(started, providerCode, routeId, routeName, "SUCCEEDED", upstreamStatus, null);
     }
 
-    public Mono<Void> succeeded(String traceId, String providerCode, int upstreamStatus) {
-        return succeeded(traceId, providerCode, "", "", upstreamStatus);
+    public Mono<Void> succeeded(GatewayDiagnosticRecord started, String providerCode, int upstreamStatus) {
+        return succeeded(started, providerCode, "", "", upstreamStatus);
     }
 
-    public Mono<Void> failed(String traceId, String providerCode, String routeId, String routeName, Integer upstreamStatus, String errorCode) {
-        return complete(traceId, providerCode, routeId, routeName, "FAILED", upstreamStatus, errorCode);
+    public Mono<Void> failed(
+            GatewayDiagnosticRecord started,
+            String providerCode,
+            String routeId,
+            String routeName,
+            Integer upstreamStatus,
+            String errorCode
+    ) {
+        return complete(started, providerCode, routeId, routeName, "FAILED", upstreamStatus, errorCode);
     }
 
-    public Mono<Void> failed(String traceId, String providerCode, Integer upstreamStatus, String errorCode) {
-        return failed(traceId, providerCode, "", "", upstreamStatus, errorCode);
+    public Mono<Void> failed(
+            GatewayDiagnosticRecord started, String providerCode, Integer upstreamStatus, String errorCode
+    ) {
+        return failed(started, providerCode, "", "", upstreamStatus, errorCode);
     }
 
-    public Mono<Void> canceled(String traceId, String providerCode, String routeId, String routeName) {
-        return complete(traceId, providerCode, routeId, routeName, "CANCELED", null, "CLIENT_CANCELED");
+    public Mono<Void> canceled(
+            GatewayDiagnosticRecord started, String providerCode, String routeId, String routeName
+    ) {
+        return complete(started, providerCode, routeId, routeName, "CANCELED", null, "CLIENT_CANCELED");
     }
 
-    public Mono<Void> canceled(String traceId, String providerCode) {
-        return canceled(traceId, providerCode, "", "");
+    public Mono<Void> canceled(GatewayDiagnosticRecord started, String providerCode) {
+        return canceled(started, providerCode, "", "");
     }
 
     public Flux<GatewayDiagnosticRecord> recent(int limit) {
-        int bounded = Math.max(1, Math.min(limit, 100));
-        return redis.opsForZSet().reverseRange(INDEX, Range.closed(0L, bounded - 1L))
-                .flatMapSequential(this::load);
+        int bounded = Math.max(1, Math.min(limit, properties.getRecentLimit()));
+        return recent.range(RECENT, 0L, bounded - 1L)
+                .flatMapSequential(this::decode);
     }
 
     public Mono<GatewayDiagnosticsSnapshot> summaryWindow() {
@@ -98,20 +126,18 @@ public class GatewayDiagnosticsStore {
     }
 
     private Mono<Void> complete(
-            String traceId, String providerCode, String routeId, String routeName,
+            GatewayDiagnosticRecord started,
+            String providerCode, String routeId, String routeName,
             String status, Integer upstreamStatus, String errorCode
     ) {
-        return load(traceId)
-                .flatMap(record -> {
-                    if (!"RUNNING".equals(record.status())) {
-                        return Mono.empty();
-                    }
-                    GatewayDiagnosticRecord completed = record.withCompletion(
-                            providerCode, routeId, routeName, status, upstreamStatus, errorCode, Instant.now()
-                    );
-                    return write(completed).then(recordCompleted(record.startedAt(), completed));
-                })
-                .onErrorResume(error -> ignoredWriteFailure("complete", traceId, error));
+        GatewayDiagnosticRecord completed = started.withCompletion(
+                providerCode, routeId, routeName, status, upstreamStatus, errorCode, Instant.now()
+        );
+        Mono<Void> metrics = recordCompleted(started.startedAt(), completed)
+                .onErrorResume(error -> ignoredWriteFailure("complete metrics", started.traceId(), error));
+        Mono<Void> detail = appendRecent(completed)
+                .onErrorResume(error -> ignoredWriteFailure("append recent detail", started.traceId(), error));
+        return Mono.when(metrics, detail).then();
     }
 
     private Mono<Void> recordStarted(Instant startedAt) {
@@ -120,7 +146,7 @@ public class GatewayDiagnosticsStore {
                         buckets.increment(bucket, "total", 1L),
                         buckets.increment(bucket, "running", 1L)
                 )
-                .then(redis.expire(bucket, properties.getRetention()))
+                .then(redis.expire(bucket, properties.getBucketRetention()))
                 .then();
     }
 
@@ -143,7 +169,7 @@ public class GatewayDiagnosticsStore {
                                 1L
                         )
                 )
-                .then(redis.expire(bucket, properties.getRetention()))
+                .then(redis.expire(bucket, properties.getBucketRetention()))
                 .then();
     }
 
@@ -175,38 +201,30 @@ public class GatewayDiagnosticsStore {
         return Math.floorDiv(epochMillis, bucketMillis) * bucketMillis;
     }
 
-    private Mono<Void> write(GatewayDiagnosticRecord record) {
+    private Mono<Void> appendRecent(GatewayDiagnosticRecord record) {
         try {
-            return redis.opsForValue()
-                    .set(key(record.traceId()), objectMapper.writeValueAsString(record), properties.getRetention())
+            String json = objectMapper.writeValueAsString(record);
+            return redis.execute(
+                            APPEND_RECENT_SCRIPT,
+                            List.of(RECENT),
+                            json,
+                            Integer.toString(properties.getRecentLimit()),
+                            Long.toString(properties.getRecentRetention().toMillis())
+                    )
+                    .next()
                     .then();
         } catch (JsonProcessingException exception) {
             return Mono.error(exception);
         }
     }
 
-    private Mono<GatewayDiagnosticRecord> load(String traceId) {
-        return redis.opsForValue().get(key(traceId))
-                .flatMap(json -> {
-                    try {
-                        return Mono.just(objectMapper.readValue(json, GatewayDiagnosticRecord.class));
-                    } catch (JsonProcessingException exception) {
-                        return redis.opsForZSet().remove(INDEX, traceId).then(Mono.empty());
-                    }
-                })
-                .switchIfEmpty(redis.opsForZSet().remove(INDEX, traceId).then(Mono.empty()));
-    }
-
-    private Mono<Void> prune(Instant now) {
-        double oldest = now.minus(properties.getRetention()).toEpochMilli();
-        return redis.opsForZSet().removeRangeByScore(INDEX, Range.closed(0D, oldest))
-                .then(redis.opsForZSet().size(INDEX))
-                .flatMap(size -> size != null && size > properties.getMaxRecords()
-                        ? redis.opsForZSet().removeRange(
-                                INDEX, Range.closed(0L, size - properties.getMaxRecords() - 1L)
-                        ).then()
-                        : Mono.empty())
-                .then();
+    private Mono<GatewayDiagnosticRecord> decode(String json) {
+        try {
+            return Mono.just(objectMapper.readValue(json, GatewayDiagnosticRecord.class));
+        } catch (JsonProcessingException exception) {
+            log.warn("Ignoring malformed recent gateway diagnostic", exception);
+            return Mono.empty();
+        }
     }
 
     private Mono<Void> ignoredWriteFailure(String operation, String traceId, Throwable error) {
@@ -215,7 +233,25 @@ public class GatewayDiagnosticsStore {
         return Mono.empty();
     }
 
-    private String key(String traceId) {
-        return RECORD_PREFIX + traceId;
+    @EventListener(ApplicationReadyEvent.class)
+    public void cleanupLegacyStorage() {
+        ScanOptions scan = ScanOptions.scanOptions()
+                .match(LEGACY_RECORD_PREFIX + "*")
+                .count(500)
+                .build();
+        redis.scan(scan)
+                .buffer(500)
+                .concatMap(keys -> keys.isEmpty()
+                        ? Mono.empty()
+                        : redis.unlink(keys.toArray(String[]::new)))
+                .then(redis.delete(LEGACY_INDEX))
+                .doOnNext(deleted -> {
+                    if (deleted > 0L) {
+                        log.info("Removed legacy gateway diagnostic index");
+                    }
+                })
+                .doOnError(error -> log.warn("Could not remove legacy gateway diagnostic storage", error))
+                .onErrorResume(error -> Mono.empty())
+                .subscribe();
     }
 }
