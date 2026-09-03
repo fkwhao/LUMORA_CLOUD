@@ -1,6 +1,6 @@
 # Lumora Cloud 工程架构
 
-最后同步：2026-09-02。
+最后同步：2026-09-03。
 
 ## 1. 工程边界
 
@@ -32,6 +32,11 @@ Desktop 与网页控制台使用独立登录会话。网页 URL 不携带 Deskto
 
 `cloud-common` 只共享稳定错误和 Tracing 契约，`cloud-api` 只共享跨服务 DTO/Feign 契约；两者
 不得共享数据库实体、Mapper 或领域服务。
+
+业务服务内部统一按 `controller/{app,admin,internal}`、`domain/{dto,vo,entity,enums,model}`、
+`mapper/<feature>`、`service/impl` 组织。稳定业务用例使用 `IService + ServiceImpl`，缓存、路由、
+协议转换、审计、任务和服务专用工具按职责进入独立包，不为每个辅助类机械创建接口。完整规则和
+新服务检查表见 [`后端包结构约定`](backend-package-conventions.md)。
 
 ## 3. 数据库与迁移
 

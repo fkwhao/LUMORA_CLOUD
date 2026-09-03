@@ -2,6 +2,11 @@
 
 Java 21、Spring Boot 3.5、Spring Cloud 2025 和 Spring Cloud Alibaba 2025 的 Maven 多模块工程。
 
+各业务微服务已经统一采用按受众划分的 Controller、按领域划分的 DTO/VO/Entity/Mapper，以及
+`IService + ServiceImpl` 业务层。服务专用辅助类留在各自的 `utils`、`support`、`cache` 等包，
+不把业务工具误放进全局公共模块。新增服务与目录归属以
+[`后端包结构约定`](../docs/backend-package-conventions.md) 为准。
+
 ```text
 backend/
 ├── cloud-common/               # 稳定公共能力，不共享实体或 Mapper
@@ -27,7 +32,9 @@ OpenFeign 控制调用使用异常比例熔断和 fail-closed Fallback，且不�
 
 Billing 对外接口按权限分为：
 
-- `/api/app/billing/plans|overview|history`：已登录用户及 Desktop 的套餐、额度与历史查询。
+- `/api/app/billing/plans|overview`：已登录用户及 Desktop 的套餐与当前额度查询。
+- `/api/app/billing/history?scope=CURRENT_PERIOD|CURRENT_MONTH`：返回所选范围的完整用量/额度汇总，以及各自最近 100 条明细。
+- `/api/app/billing/usage-chart?range=WEEK|MONTH&anchor=YYYY-MM-DD`：按 `Asia/Shanghai` 自然周或自然月返回逐日 Token 汇总。
 - `/api/app/billing/orders/**`：网页用户控制台幂等创建订单、查询/取消订单、钱包支付和开发环境测试支付。
 - `/api/app/billing/wallet/**`：查询余额/流水、创建充值订单、MOCK 到账和取消充值订单。
 - `/api/app/billing/payment-capabilities`：返回当前环境实际启用的支付方式；生产环境不得启用 `MOCK`。
@@ -38,7 +45,7 @@ Billing 对外接口按权限分为：
 - `/api/admin/billing/wallets/**`：查询用户钱包并使用幂等调整单执行带原因的余额增减。
 - `/api/admin/users/**`：查询用户、维护角色/状态和撤销会话，不跨服务复制用户数据。
 - `/api/admin/users/statistics`：精确统计用户状态、本月新增用户和未过期活跃会话。
-- `/api/admin/model-gateway/diagnostics`：读取 Redis 中有限保留期的脱敏网关运行诊断。
+- `/api/admin/model-gateway/diagnostics`：读取 Redis 中最近 24 小时的分桶统计和最多 100 条脱敏请求明细。
 - `/internal/billing/reservations/**`：只允许 Model Gateway 使用内部服务凭据调用的预占、结算、释放
   与待对账接口；公共 DTO 与 Feign Client 位于 `cloud-api`。
 
@@ -112,6 +119,16 @@ Billing 的周额度周期从订阅生效时刻开始连续计算，每七天一
 并行读取并处理局部失败，不增加跨库查询。日/月统计边界统一采用 `Asia/Shanghai`；订单收入按币种
 分组，不能把 CNY、USD 等金额直接相加。面向全局时间范围的统计列具有独立索引，避免复用仅适合
 单用户历史查询的联合索引造成全表扫描。
+
+用户计费查询将“汇总口径”和“明细展示”分离。当前额度周期最多七天，额度汇总直接读取权威
+`quota_bucket`，用量通过 `(user_id, occurred_at)` 索引做有界聚合；本月汇总和周/月 Token 图表读取
+`billing_quota_daily_summary`、`billing_usage_daily_summary`，最多扫描一个自然月的日记录。两张日汇总表
+随原始流水/Usage 在同一事务内幂等更新，Flyway V8 会为已有记录完成一次回填；原始账本和 Usage 仍是
+最终可审计事实。两种范围的明细都只读取最近 100 条，前端不得用这 100 条重新计算汇总。
+
+网关诊断把每次调用累计到 Redis 的 5 分钟时间桶。最近 24 小时总请求、成功/失败/取消、运行中、
+平均耗时和近似 P95 固定读取约 289 个桶，不再受诊断明细 `max-records` 限制；明细索引仍按保留期清理，
+管理接口最多返回最近 100 条。成功率口径为 `成功 / (成功 + 失败)`，运行中和客户端取消不进入分母。
 
 ## 开发环境配置
 

@@ -22,6 +22,7 @@ export interface GatewayDiagnosticsSummary {
   total: number;
   succeeded: number;
   failed: number;
+  canceled: number;
   running: number;
   averageDurationMillis: number;
   p95DurationMillis: number;

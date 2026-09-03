@@ -2,7 +2,7 @@ package com.lumora.cloud.modelgateway.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.lumora.cloud.api.catalog.ProviderProtocol;
-import com.lumora.cloud.modelgateway.domain.TokenUsage;
+import com.lumora.cloud.modelgateway.domain.model.TokenUsage;
 import org.springframework.stereotype.Component;
 
 @Component

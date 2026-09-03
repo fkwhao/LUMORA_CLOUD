@@ -3,7 +3,7 @@ package com.lumora.cloud.modelgateway.concurrency;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
-import com.lumora.cloud.modelgateway.service.RequestIds;
+import com.lumora.cloud.modelgateway.utils.RequestIds;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;

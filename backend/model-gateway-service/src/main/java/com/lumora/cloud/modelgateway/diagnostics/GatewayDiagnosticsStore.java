@@ -7,12 +7,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.ReactiveHashOperations;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class GatewayDiagnosticsStore {
@@ -20,8 +23,10 @@ public class GatewayDiagnosticsStore {
     private static final Logger log = LoggerFactory.getLogger(GatewayDiagnosticsStore.class);
     private static final String RECORD_PREFIX = "lumora:model-gateway:diagnostics:record:";
     private static final String INDEX = "lumora:model-gateway:diagnostics:index";
+    private static final String BUCKET_PREFIX = "lumora:model-gateway:diagnostics:bucket:";
 
     private final ReactiveStringRedisTemplate redis;
+    private final ReactiveHashOperations<String, String, String> buckets;
     private final ObjectMapper objectMapper;
     private final GatewayDiagnosticsProperties properties;
 
@@ -31,6 +36,7 @@ public class GatewayDiagnosticsStore {
             GatewayDiagnosticsProperties properties
     ) {
         this.redis = redis;
+        this.buckets = redis.opsForHash();
         this.objectMapper = objectMapper;
         this.properties = properties;
     }
@@ -45,6 +51,7 @@ public class GatewayDiagnosticsStore {
         );
         return write(record)
                 .then(redis.opsForZSet().add(INDEX, record.traceId(), now.toEpochMilli()))
+                .then(recordStarted(now))
                 .then(prune(now))
                 .onErrorResume(error -> ignoredWriteFailure("start", context.traceId(), error));
     }
@@ -74,18 +81,20 @@ public class GatewayDiagnosticsStore {
     }
 
     public Flux<GatewayDiagnosticRecord> recent(int limit) {
-        int bounded = Math.max(1, Math.min(limit, 200));
+        int bounded = Math.max(1, Math.min(limit, 100));
         return redis.opsForZSet().reverseRange(INDEX, Range.closed(0L, bounded - 1L))
                 .flatMapSequential(this::load);
     }
 
-    public Mono<List<GatewayDiagnosticRecord>> summaryWindow() {
-        Instant startsAt = Instant.now().minus(properties.getSummaryWindow());
-        return redis.opsForZSet()
-                .reverseRangeByScore(INDEX, Range.closed((double) startsAt.toEpochMilli(), Double.MAX_VALUE))
-                .take(properties.getMaxRecords())
-                .flatMapSequential(this::load)
-                .collectList();
+    public Mono<GatewayDiagnosticsSnapshot> summaryWindow() {
+        Instant now = Instant.now();
+        List<String> keys = summaryBucketKeys(now);
+        int concurrency = Math.min(32, Math.max(1, keys.size()));
+        return Flux.fromIterable(keys)
+                .flatMap(key -> buckets.entries(key)
+                        .collectMap(Map.Entry::getKey, Map.Entry::getValue)
+                        .map(GatewayDiagnosticsSnapshot::from), concurrency)
+                .reduce(GatewayDiagnosticsSnapshot.empty(), GatewayDiagnosticsSnapshot::plus);
     }
 
     private Mono<Void> complete(
@@ -93,10 +102,77 @@ public class GatewayDiagnosticsStore {
             String status, Integer upstreamStatus, String errorCode
     ) {
         return load(traceId)
-                .flatMap(record -> write(record.withCompletion(
-                        providerCode, routeId, routeName, status, upstreamStatus, errorCode, Instant.now()
-                )))
+                .flatMap(record -> {
+                    if (!"RUNNING".equals(record.status())) {
+                        return Mono.empty();
+                    }
+                    GatewayDiagnosticRecord completed = record.withCompletion(
+                            providerCode, routeId, routeName, status, upstreamStatus, errorCode, Instant.now()
+                    );
+                    return write(completed).then(recordCompleted(record.startedAt(), completed));
+                })
                 .onErrorResume(error -> ignoredWriteFailure("complete", traceId, error));
+    }
+
+    private Mono<Void> recordStarted(Instant startedAt) {
+        String bucket = bucketKey(startedAt);
+        return Mono.when(
+                        buckets.increment(bucket, "total", 1L),
+                        buckets.increment(bucket, "running", 1L)
+                )
+                .then(redis.expire(bucket, properties.getRetention()))
+                .then();
+    }
+
+    private Mono<Void> recordCompleted(Instant startedAt, GatewayDiagnosticRecord completed) {
+        String bucket = bucketKey(startedAt);
+        String statusField = switch (completed.status()) {
+            case "SUCCEEDED" -> "succeeded";
+            case "FAILED" -> "failed";
+            case "CANCELED" -> "canceled";
+            default -> throw new IllegalArgumentException("Unsupported diagnostic status: " + completed.status());
+        };
+        return Mono.when(
+                        buckets.increment(bucket, "running", -1L),
+                        buckets.increment(bucket, statusField, 1L),
+                        buckets.increment(bucket, "duration_count", 1L),
+                        buckets.increment(bucket, "duration_total_millis", completed.durationMillis()),
+                        buckets.increment(
+                                bucket,
+                                GatewayDiagnosticsSnapshot.histogramField(completed.durationMillis()),
+                                1L
+                        )
+                )
+                .then(redis.expire(bucket, properties.getRetention()))
+                .then();
+    }
+
+    private List<String> summaryBucketKeys(Instant now) {
+        long bucketMillis = summaryBucketMillis();
+        long first = floorBucket(now.minus(properties.getSummaryWindow()).toEpochMilli(), bucketMillis);
+        long last = floorBucket(now.toEpochMilli(), bucketMillis);
+        List<String> keys = new ArrayList<>((int) ((last - first) / bucketMillis) + 1);
+        for (long bucket = first; bucket <= last; bucket += bucketMillis) {
+            keys.add(BUCKET_PREFIX + bucket);
+        }
+        return keys;
+    }
+
+    private String bucketKey(Instant instant) {
+        long bucketMillis = summaryBucketMillis();
+        return BUCKET_PREFIX + floorBucket(instant.toEpochMilli(), bucketMillis);
+    }
+
+    private long summaryBucketMillis() {
+        long millis = properties.getSummaryBucket().toMillis();
+        if (millis <= 0L) {
+            throw new IllegalStateException("Diagnostic summary bucket must be positive");
+        }
+        return millis;
+    }
+
+    private long floorBucket(long epochMillis, long bucketMillis) {
+        return Math.floorDiv(epochMillis, bucketMillis) * bucketMillis;
     }
 
     private Mono<Void> write(GatewayDiagnosticRecord record) {

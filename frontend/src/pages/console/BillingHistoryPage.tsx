@@ -6,20 +6,22 @@ import { ApiClientError } from "../../api/auth";
 import {
   getBillingHistory,
   type BillingHistory,
+  type BillingHistoryScope,
   type BillingLedgerEntry,
   type BillingUsage,
 } from "../../api/billing";
 
 export function BillingHistoryPage({ mode }: { mode: "usage" | "ledger" }) {
+  const [scope, setScope] = useState<BillingHistoryScope>("CURRENT_PERIOD");
   const [history, setHistory] = useState<BillingHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  async function load(targetScope: BillingHistoryScope) {
     setLoading(true);
     setError(null);
     try {
-      setHistory(await getBillingHistory());
+      setHistory(await getBillingHistory(targetScope));
     } catch (reason) {
       setError(message(reason));
     } finally {
@@ -28,8 +30,8 @@ export function BillingHistoryPage({ mode }: { mode: "usage" | "ledger" }) {
   }
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load(scope);
+  }, [scope]);
 
   const isUsage = mode === "usage";
 
@@ -39,15 +41,20 @@ export function BillingHistoryPage({ mode }: { mode: "usage" | "ledger" }) {
         <ArrowLeft size={15} /> 返回概览
       </Button>
 
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-sm text-muted">套餐与额度</p>
           <h1 className="text-2xl font-semibold tracking-tight">{isUsage ? "模型用量明细" : "额度流水"}</h1>
           <p className="mt-2 text-sm text-muted">
-            {isUsage ? "展示服务端权威 Usage 和最终结算额度。" : "记录额度发放、预占、结算和释放的不可变变更。"}
+            {isUsage ? "统计使用服务端完整数据，明细仅展示所选范围内最近 100 条。" : "统计使用完整额度数据，流水仅展示所选范围内最近 100 条不可变记录。"}
           </p>
         </div>
-        <Button isDisabled={loading} onPress={() => void load()} variant="secondary"><RefreshCw size={16} /> 刷新</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ScopeSwitch loading={loading} onChange={setScope} scope={scope} />
+          <Button isDisabled={loading} onPress={() => void load(scope)} variant="secondary">
+            <RefreshCw size={16} /> 刷新
+          </Button>
+        </div>
       </header>
 
       {error && <div className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger" role="alert">{error}</div>}
@@ -55,34 +62,72 @@ export function BillingHistoryPage({ mode }: { mode: "usage" | "ledger" }) {
       {loading ? (
         <div className="grid min-h-[45vh] place-items-center text-sm text-muted">正在读取记录…</div>
       ) : isUsage ? (
-        <UsageList usage={history?.usage ?? []} />
+        <UsageList history={history} />
       ) : (
-        <LedgerList ledger={history?.ledger ?? []} />
+        <LedgerList history={history} />
       )}
     </div>
   );
 }
 
-function UsageList({ usage }: { usage: BillingUsage[] }) {
-  const totalTokens = usage.reduce((sum, item) => sum + tokenTotal(item), 0);
-  const totalQuota = usage.reduce((sum, item) => sum + item.billedQuota, 0);
+function ScopeSwitch({
+  loading,
+  onChange,
+  scope,
+}: {
+  loading: boolean;
+  onChange: (scope: BillingHistoryScope) => void;
+  scope: BillingHistoryScope;
+}) {
+  return (
+    <div aria-label="统计范围" className="flex rounded-xl bg-default p-1" role="group">
+      <Button
+        isDisabled={loading}
+        onPress={() => onChange("CURRENT_PERIOD")}
+        size="sm"
+        variant={scope === "CURRENT_PERIOD" ? "primary" : "ghost"}
+      >
+        当前额度周期
+      </Button>
+      <Button
+        isDisabled={loading}
+        onPress={() => onChange("CURRENT_MONTH")}
+        size="sm"
+        variant={scope === "CURRENT_MONTH" ? "primary" : "ghost"}
+      >
+        本月
+      </Button>
+    </div>
+  );
+}
+
+function UsageList({ history }: { history: BillingHistory | null }) {
+  const usage = history?.usage ?? [];
+  const summary = history?.usageSummary;
+  const totalTokens = summary ? usageSummaryTokens(summary) : 0;
 
   return (
     <>
+      <RangeNotice history={history} />
       <section className="grid gap-4 sm:grid-cols-3">
-        <Summary icon={Sparkles} label="记录数" value={String(usage.length)} />
+        <Summary icon={Sparkles} label="模型请求" value={formatNumber(summary?.requestCount ?? 0)} />
         <Summary icon={CircleGauge} label="Token 合计" value={formatNumber(totalTokens)} />
-        <Summary icon={BookOpen} label="结算额度" value={formatQuota(totalQuota)} />
+        <Summary icon={BookOpen} label="结算额度" value={formatQuota(summary?.billedQuota ?? 0)} />
       </section>
       <Card variant="default">
-        <Card.Header><Card.Title>最近模型调用</Card.Title><Card.Description>最多显示最近 100 条记录</Card.Description></Card.Header>
+        <Card.Header>
+          <div>
+            <Card.Title>最近模型调用</Card.Title>
+            <Card.Description>{detailDescription(summary?.requestCount ?? 0, history?.detailLimit ?? 100)}</Card.Description>
+          </div>
+        </Card.Header>
         <Card.Content className="pt-1">
-          {usage.length === 0 ? <Empty text="暂无模型用量记录。" /> : (
+          {usage.length === 0 ? <Empty text="所选范围内暂无模型用量记录。" /> : (
             <div className="divide-y divide-separator">
               {usage.map((item) => (
                 <div className="grid gap-3 py-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,.8fr)_auto] lg:items-center" key={item.usageId}>
                   <div className="min-w-0"><p className="truncate text-sm font-medium">{item.modelCode}</p><p className="mt-1 truncate font-mono text-xs text-muted" title={item.requestId}>{item.requestId}</p></div>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted"><span>输入 {formatNumber(item.inputTokens)}</span><span>输出 {formatNumber(item.outputTokens)}</span><span>推理 {formatNumber(item.reasoningTokens)}</span><span>缓存 {formatNumber(item.cacheReadTokens + item.cacheWriteTokens)}</span></div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted"><span>输入 {formatNumber(item.inputTokens)}</span><span>输出 {formatNumber(item.outputTokens)}</span><span>推理 {formatNumber(item.reasoningTokens)}</span><span>缓存读 {formatNumber(item.cacheReadTokens)}</span><span>缓存创建 {formatNumber(item.cacheWriteTokens)}</span></div>
                   <div><p className="text-sm">{formatQuota(item.billedQuota)} 额度</p><p className="text-xs text-muted">{formatDateTime(item.occurredAt)}</p></div>
                   <UsageStatus status={item.status} />
                 </div>
@@ -95,22 +140,27 @@ function UsageList({ usage }: { usage: BillingUsage[] }) {
   );
 }
 
-function LedgerList({ ledger }: { ledger: BillingLedgerEntry[] }) {
-  const granted = ledger.reduce((sum, item) => sum + item.grantedDelta, 0);
-  const consumed = ledger.reduce((sum, item) => sum + item.consumedDelta, 0);
-  const reserved = ledger.reduce((sum, item) => sum + item.reservedDelta, 0);
+function LedgerList({ history }: { history: BillingHistory | null }) {
+  const ledger = history?.ledger ?? [];
+  const summary = history?.quotaSummary;
 
   return (
     <>
+      <RangeNotice history={history} />
       <section className="grid gap-4 sm:grid-cols-3">
-        <Summary icon={Sparkles} label="额度发放变化" value={signed(granted)} />
-        <Summary icon={CircleGauge} label="预占变化" value={signed(reserved)} />
-        <Summary icon={BookOpen} label="已用变化" value={signed(consumed)} />
+        <Summary icon={Sparkles} label="额度发放变化" value={signed(summary?.grantedDelta ?? 0)} />
+        <Summary icon={CircleGauge} label="预占变化" value={signed(summary?.reservedDelta ?? 0)} />
+        <Summary icon={BookOpen} label="已用变化" value={signed(summary?.consumedDelta ?? 0)} />
       </section>
       <Card variant="default">
-        <Card.Header><Card.Title>额度流水</Card.Title><Card.Description>最多显示最近 100 条不可变记录</Card.Description></Card.Header>
+        <Card.Header>
+          <div>
+            <Card.Title>额度流水</Card.Title>
+            <Card.Description>{detailDescription(summary?.entryCount ?? 0, history?.detailLimit ?? 100, "条不可变记录")}</Card.Description>
+          </div>
+        </Card.Header>
         <Card.Content className="pt-1">
-          {ledger.length === 0 ? <Empty text="暂无额度流水。" /> : (
+          {ledger.length === 0 ? <Empty text="所选范围内暂无额度流水。" /> : (
             <div className="divide-y divide-separator">
               {ledger.map((entry) => (
                 <div className="grid gap-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,.9fr)_auto] lg:items-center" key={entry.id}>
@@ -128,8 +178,18 @@ function LedgerList({ ledger }: { ledger: BillingLedgerEntry[] }) {
   );
 }
 
+function RangeNotice({ history }: { history: BillingHistory | null }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
+      <Chip size="sm" variant="soft">{history?.scope === "CURRENT_MONTH" ? "本月" : "当前额度周期"}</Chip>
+      <span>{formatRange(history?.startsAt, history?.endsAt)}</span>
+      <span>· 时区 {history?.reportingZone ?? "Asia/Shanghai"}</span>
+    </div>
+  );
+}
+
 function Summary({ icon: Icon, label, value }: { icon: typeof Sparkles; label: string; value: string }) {
-  return <Card variant="default"><Card.Content className="flex-row items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-default text-muted"><Icon size={18} /></span><div><p className="text-xs text-muted">{label}</p><p className="text-xl font-semibold">{value}</p></div></Card.Content></Card>;
+  return <Card variant="default"><Card.Content className="flex-row items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-default text-muted"><Icon size={18} /></span><div><p className="text-xs text-muted">{label}</p><p className="text-xl font-semibold tabular-nums">{value}</p></div></Card.Content></Card>;
 }
 
 function UsageStatus({ status }: { status: BillingUsage["status"] }) {
@@ -152,12 +212,22 @@ function Empty({ text }: { text: string }) {
   return <p className="py-10 text-center text-sm text-muted">{text}</p>;
 }
 
-function tokenTotal(usage: BillingUsage): number {
-  return usage.inputTokens + usage.outputTokens + usage.reasoningTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+function usageSummaryTokens(summary: BillingHistory["usageSummary"]): number {
+  return summary.inputTokens + summary.outputTokens + summary.reasoningTokens + summary.cacheReadTokens + summary.cacheWriteTokens;
 }
 
 function ledgerLabel(type: BillingLedgerEntry["entryType"]): string {
   return { GRANT: "周期额度发放", RESERVE: "模型请求预占", SETTLE: "模型请求结算", RELEASE: "释放预占额度", ADJUSTMENT: "额度调整" }[type];
+}
+
+function detailDescription(total: number, limit: number, noun = "条记录"): string {
+  return total > limit ? `本范围共 ${formatNumber(total)} ${noun}，显示最近 ${limit} 条` : `本范围共 ${formatNumber(total)} ${noun}`;
+}
+
+function formatRange(startsAt?: string, endsAt?: string): string {
+  if (!startsAt || !endsAt) return "当前没有生效中的额度周期";
+  const formatter = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Shanghai" });
+  return `${formatter.format(new Date(startsAt))} 至 ${formatter.format(new Date(endsAt))}`;
 }
 
 function signed(value: number): string {

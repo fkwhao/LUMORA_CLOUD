@@ -1,0 +1,41 @@
+package com.lumora.cloud.billing.domain.projection.history;
+
+import java.math.BigDecimal;
+
+public class UsageAggregate {
+
+    private Long requestCount;
+    private Long completedCount;
+    private Long pendingCount;
+    private Long failedCount;
+    private Long inputTokens;
+    private Long outputTokens;
+    private Long reasoningTokens;
+    private Long cacheReadTokens;
+    private Long cacheWriteTokens;
+    private BigDecimal billedQuota;
+
+    public UsageAggregate() {
+    }
+
+    public Long getRequestCount() { return requestCount; }
+    public void setRequestCount(Long requestCount) { this.requestCount = requestCount; }
+    public Long getCompletedCount() { return completedCount; }
+    public void setCompletedCount(Long completedCount) { this.completedCount = completedCount; }
+    public Long getPendingCount() { return pendingCount; }
+    public void setPendingCount(Long pendingCount) { this.pendingCount = pendingCount; }
+    public Long getFailedCount() { return failedCount; }
+    public void setFailedCount(Long failedCount) { this.failedCount = failedCount; }
+    public Long getInputTokens() { return inputTokens; }
+    public void setInputTokens(Long inputTokens) { this.inputTokens = inputTokens; }
+    public Long getOutputTokens() { return outputTokens; }
+    public void setOutputTokens(Long outputTokens) { this.outputTokens = outputTokens; }
+    public Long getReasoningTokens() { return reasoningTokens; }
+    public void setReasoningTokens(Long reasoningTokens) { this.reasoningTokens = reasoningTokens; }
+    public Long getCacheReadTokens() { return cacheReadTokens; }
+    public void setCacheReadTokens(Long cacheReadTokens) { this.cacheReadTokens = cacheReadTokens; }
+    public Long getCacheWriteTokens() { return cacheWriteTokens; }
+    public void setCacheWriteTokens(Long cacheWriteTokens) { this.cacheWriteTokens = cacheWriteTokens; }
+    public BigDecimal getBilledQuota() { return billedQuota; }
+    public void setBilledQuota(BigDecimal billedQuota) { this.billedQuota = billedQuota; }
+}

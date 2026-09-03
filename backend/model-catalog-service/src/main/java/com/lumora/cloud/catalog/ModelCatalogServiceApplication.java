@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
-@MapperScan("com.lumora.cloud.catalog.persistence.mapper")
+@MapperScan("com.lumora.cloud.catalog.mapper")
 public class ModelCatalogServiceApplication {
 
     public static void main(String[] args) {

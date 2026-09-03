@@ -2,7 +2,7 @@ package com.lumora.cloud.modelgateway.concurrency;
 
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
-import com.lumora.cloud.modelgateway.service.RequestIds;
+import com.lumora.cloud.modelgateway.utils.RequestIds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;

@@ -96,9 +96,60 @@ export interface BillingUsage {
   occurredAt: string;
 }
 
+export type BillingHistoryScope = "CURRENT_PERIOD" | "CURRENT_MONTH";
+
+export interface BillingQuotaHistorySummary {
+  entryCount: number;
+  grantedDelta: number;
+  reservedDelta: number;
+  consumedDelta: number;
+}
+
+export interface BillingUsageHistorySummary {
+  requestCount: number;
+  completedCount: number;
+  pendingCount: number;
+  failedCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  billedQuota: number;
+}
+
 export interface BillingHistory {
+  scope: BillingHistoryScope;
+  startsAt?: string;
+  endsAt?: string;
+  reportingZone: string;
+  detailLimit: number;
+  quotaSummary: BillingQuotaHistorySummary;
+  usageSummary: BillingUsageHistorySummary;
   ledger: BillingLedgerEntry[];
   usage: BillingUsage[];
+}
+
+export type UsageChartRange = "WEEK" | "MONTH";
+
+export interface DailyBillingUsage {
+  date: string;
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  billedQuota: number;
+}
+
+export interface BillingUsageChart {
+  range: UsageChartRange;
+  startsOn: string;
+  endsOnExclusive: string;
+  reportingZone: string;
+  summary: BillingUsageHistorySummary;
+  points: DailyBillingUsage[];
 }
 
 export interface PurchaseOrder {
@@ -200,8 +251,17 @@ export function getBillingOverview(): Promise<BillingOverview> {
   return apiFetch<BillingOverview>("/api/app/billing/overview");
 }
 
-export function getBillingHistory(): Promise<BillingHistory> {
-  return apiFetch<BillingHistory>("/api/app/billing/history");
+export function getBillingHistory(scope: BillingHistoryScope = "CURRENT_PERIOD"): Promise<BillingHistory> {
+  return apiFetch<BillingHistory>(`/api/app/billing/history?scope=${scope}`);
+}
+
+export function getBillingUsageChart(
+  range: UsageChartRange = "WEEK",
+  anchor?: string,
+): Promise<BillingUsageChart> {
+  const parameters = new URLSearchParams({ range });
+  if (anchor) parameters.set("anchor", anchor);
+  return apiFetch<BillingUsageChart>(`/api/app/billing/usage-chart?${parameters.toString()}`);
 }
 
 export function getPaymentCapabilities(): Promise<PaymentCapabilities> {

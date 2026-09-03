@@ -19,20 +19,22 @@ export function GatewayDiagnosticsPage() {
   useEffect(() => { void load(); }, []);
 
   const summary = data?.summary;
-  const successRate = summary?.total ? (summary.succeeded / summary.total) * 100 : 0;
+  const completedForRate = summary ? summary.succeeded + summary.failed : 0;
+  const successRate = completedForRate ? ((summary?.succeeded ?? 0) / completedForRate) * 100 : 0;
 
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="mb-1 text-sm text-muted">模型调用链路</p><h1 className="text-2xl font-semibold tracking-tight">网关诊断</h1><p className="mt-2 text-sm text-muted">仅保存追踪标识、模型、供应商、状态与耗时；不记录 Prompt、响应正文或 API Key。</p></div><Button isDisabled={loading} onPress={() => void load()} variant="secondary"><RefreshCw size={16} />刷新</Button></header>
       {error && <div className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">{error}</div>}
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted"><Chip size="sm" variant="soft">最近 24 小时</Chip><span>固定 5 分钟时间桶统计，不受明细保留数量限制</span></div>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Activity} label="窗口请求" value={summary ? String(summary.total) : "—"} />
+        <Metric icon={Activity} label="24 小时请求" value={summary ? String(summary.total) : "—"} />
         <Metric icon={CircleGauge} label="成功率" value={summary ? `${successRate.toFixed(1)}%` : "—"} />
         <Metric icon={Clock3} label="平均耗时" value={summary ? duration(summary.averageDurationMillis) : "—"} />
         <Metric icon={TriangleAlert} label="失败 / 运行中" value={summary ? `${summary.failed} / ${summary.running}` : "—"} />
       </section>
       <Card variant="default">
-        <Card.Header><div><Card.Title>最近请求</Card.Title><Card.Description>{summary ? `${summary.window} 统计窗口 · P95 ${duration(summary.p95DurationMillis)}` : "等待数据"}</Card.Description></div></Card.Header>
+        <Card.Header><div><Card.Title>最近请求</Card.Title><Card.Description>{summary ? `最多显示最近 100 条 · 24 小时 P95（近似）${duration(summary.p95DurationMillis)}` : "等待数据"}</Card.Description></div></Card.Header>
         <Card.Content className="gap-0 pt-1">
           {loading ? <p className="py-12 text-center text-sm text-muted">正在读取诊断数据…</p> : !data?.records.length ? <p className="py-12 text-center text-sm text-muted">暂无模型请求记录</p> : data.records.map((record) => (
             <div className="grid gap-3 border-b border-separator py-4 last:border-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.8fr)_minmax(0,.8fr)_auto] lg:items-center" key={record.traceId}>

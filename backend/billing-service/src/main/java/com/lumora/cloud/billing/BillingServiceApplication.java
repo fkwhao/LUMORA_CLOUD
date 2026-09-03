@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@MapperScan("com.lumora.cloud.billing.persistence.mapper")
+@MapperScan("com.lumora.cloud.billing.mapper")
 @EnableScheduling
 @EnableConfigurationProperties(PaymentProperties.class)
 @EnableFeignClients(basePackageClasses = CatalogClient.class)

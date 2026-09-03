@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
-@MapperScan("com.lumora.cloud.user.persistence.mapper")
+@MapperScan("com.lumora.cloud.user.mapper")
 public class UserServiceApplication {
 
     public static void main(String[] args) {
