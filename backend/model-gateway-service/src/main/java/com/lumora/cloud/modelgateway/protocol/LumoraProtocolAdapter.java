@@ -130,6 +130,7 @@ public class LumoraProtocolAdapter {
         if (!effort.isBlank() && !"none".equals(effort)) {
             body.putObject("reasoning").put("effort", effort);
         }
+        applyResponseSchema(request, model, ProviderProtocol.OPENAI_COMPATIBLE, body);
         return body;
     }
 
@@ -194,6 +195,7 @@ public class LumoraProtocolAdapter {
         if (!effort.isBlank() && !"none".equals(effort)) {
             body.putObject("reasoning").put("effort", effort);
         }
+        applyResponseSchema(request, model, ProviderProtocol.RESPONSES, body);
         return body;
     }
 
@@ -254,7 +256,52 @@ public class LumoraProtocolAdapter {
                     .put("type", "enabled")
                     .put("budget_tokens", Math.min(outputLimit - 1, budget));
         }
+        applyResponseSchema(request, model, ProviderProtocol.ANTHROPIC, body);
         return body;
+    }
+
+    private void applyResponseSchema(
+            ObjectNode request,
+            ResolvedModelConfig model,
+            ProviderProtocol protocol,
+            ObjectNode body
+    ) {
+        JsonNode schema = request.path("generation").get("responseSchema");
+        if (schema == null || schema.isNull()) return;
+        if (!schema.isObject()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "LUMORA_RESPONSE_SCHEMA_INVALID",
+                    "generation.responseSchema 必须是 JSON Schema 对象"
+            );
+        }
+        // The internal response schema is a best-effort preference. Models
+        // without structured-output capability retain the prompt-only path,
+        // allowing the Agent's bounded repair fallback to handle their text.
+        if (!model.capabilities().json()) return;
+
+        switch (protocol) {
+            // Generic OpenAI-compatible endpoints commonly implement JSON
+            // object mode but not OpenAI's newer json_schema extension. The
+            // Agent still validates the supplied schema and performs one
+            // bounded repair attempt, so object mode is the safer baseline.
+            case OPENAI_COMPATIBLE -> body.putObject("response_format")
+                    .put("type", "json_object");
+            case RESPONSES -> {
+                ObjectNode format = body.putObject("text")
+                        .putObject("format");
+                format.put("type", "json_schema");
+                format.put("name", "lumora_response");
+                format.put("strict", false);
+                format.set("schema", schema.deepCopy());
+            }
+            case ANTHROPIC -> {
+                ObjectNode format = body.putObject("output_config")
+                        .putObject("format");
+                format.put("type", "json_schema");
+                format.set("schema", schema.deepCopy());
+            }
+        }
     }
 
     private ArrayNode openAiMessages(JsonNode source) {

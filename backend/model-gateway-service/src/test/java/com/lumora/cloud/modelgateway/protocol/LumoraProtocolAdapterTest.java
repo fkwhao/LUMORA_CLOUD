@@ -6,6 +6,7 @@ import com.lumora.cloud.api.catalog.CatalogContracts.ModelCapabilities;
 import com.lumora.cloud.api.catalog.CatalogContracts.QuotaRates;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelConfig;
 import com.lumora.cloud.api.catalog.ProviderProtocol;
+import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.provider.ProviderUsageParser;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -17,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 class LumoraProtocolAdapterTest {
 
@@ -106,6 +108,77 @@ class LumoraProtocolAdapterTest {
                 .contains("function_call", "function_call_output", "call-1");
         assertThat(body.path("reasoning").path("effort").asText()).isEqualTo("high");
         assertThat(body.path("store").asBoolean()).isFalse();
+    }
+
+    @Test
+    void mapsUnifiedResponseSchemaToProviderStructuredOutput() throws Exception {
+        var request = (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree("""
+                {
+                  "protocolVersion":"1",
+                  "model":"lumora-test",
+                  "stream":false,
+                  "messages":[{"role":"user","content":[{"type":"text","text":"extract"}]}],
+                  "tools":[],
+                  "generation":{"responseSchema":{"type":"object","properties":{"candidates":{"type":"array"}},"required":["candidates"]}}
+                }
+                """);
+
+        var openAi = adapter.upstreamBody(request, model("OPENAI_COMPATIBLE"),
+                ProviderProtocol.OPENAI_COMPATIBLE, false, 2048);
+        var responses = adapter.upstreamBody(request, model("RESPONSES"),
+                ProviderProtocol.RESPONSES, false, 2048);
+        var anthropic = adapter.upstreamBody(request, model("ANTHROPIC"),
+                ProviderProtocol.ANTHROPIC, false, 2048);
+
+        assertThat(openAi.path("response_format").path("type").asText())
+                .isEqualTo("json_object");
+        assertThat(responses.path("text").path("format").path("type").asText())
+                .isEqualTo("json_schema");
+        assertThat(responses.path("text").path("format").path("schema")
+                .path("required").path(0).asText()).isEqualTo("candidates");
+        assertThat(anthropic.path("output_config").path("format").path("type").asText())
+                .isEqualTo("json_schema");
+        assertThat(anthropic.path("output_config").path("format").path("schema")
+                .path("type").asText()).isEqualTo("object");
+    }
+
+    @Test
+    void leavesResponseSchemaAsBestEffortWhenModelDoesNotSupportJson() throws Exception {
+        var request = (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree("""
+                {
+                  "protocolVersion":"1",
+                  "model":"lumora-test",
+                  "stream":false,
+                  "messages":[{"role":"user","content":[{"type":"text","text":"extract"}]}],
+                  "tools":[],
+                  "generation":{"responseSchema":{"type":"object"}}
+                }
+                """);
+
+        var body = adapter.upstreamBody(request, model("RESPONSES", false, false),
+                ProviderProtocol.RESPONSES, false, 2048);
+
+        assertThat(body.has("text")).isFalse();
+    }
+
+    @Test
+    void rejectsNonObjectUnifiedResponseSchema() throws Exception {
+        var request = (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree("""
+                {
+                  "protocolVersion":"1",
+                  "model":"lumora-test",
+                  "stream":false,
+                  "messages":[{"role":"user","content":[{"type":"text","text":"extract"}]}],
+                  "tools":[],
+                  "generation":{"responseSchema":"invalid"}
+                }
+                """);
+
+        assertThatExceptionOfType(ApiException.class)
+                .isThrownBy(() -> adapter.upstreamBody(request, model("RESPONSES"),
+                        ProviderProtocol.RESPONSES, false, 2048))
+                .satisfies(error -> assertThat(error.getCode())
+                        .isEqualTo("LUMORA_RESPONSE_SCHEMA_INVALID"));
     }
 
     @Test
@@ -276,11 +349,15 @@ class LumoraProtocolAdapterTest {
     }
 
     private ResolvedModelConfig model(String protocol, boolean webSearch) {
+        return model(protocol, true, webSearch);
+    }
+
+    private ResolvedModelConfig model(String protocol, boolean json, boolean webSearch) {
         BigDecimal one = BigDecimal.ONE;
         return new ResolvedModelConfig(
                 "lumora-test", "Test", null, "pricing-v1", "provider", protocol,
                 "https://api.example.com/v1", "cred", "upstream-model",
-                new ModelCapabilities(8_192, 4096, true, true, true, true, webSearch),
+                new ModelCapabilities(8_192, 4096, true, true, true, json, webSearch),
                 "USD", new CostRates(one, one, one, one), null,
                 new QuotaRates(one, one, one, one, one), null, Instant.now()
         );
