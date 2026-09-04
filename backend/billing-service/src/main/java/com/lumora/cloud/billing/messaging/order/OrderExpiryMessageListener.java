@@ -2,6 +2,7 @@ package com.lumora.cloud.billing.messaging.order;
 
 import com.lumora.cloud.billing.config.BillingMessagingConfiguration;
 import com.lumora.cloud.billing.service.IPurchaseOrderService;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -10,15 +11,12 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 
 @Component
+@RequiredArgsConstructor
 public class OrderExpiryMessageListener {
 
     private static final Logger log = LoggerFactory.getLogger(OrderExpiryMessageListener.class);
 
     private final IPurchaseOrderService orderService;
-
-    public OrderExpiryMessageListener(IPurchaseOrderService orderService) {
-        this.orderService = orderService;
-    }
 
     @RabbitListener(
             queues = BillingMessagingConfiguration.ORDER_EXPIRY_QUEUE,

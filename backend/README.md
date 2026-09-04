@@ -4,7 +4,8 @@ Java 21、Spring Boot 3.5、Spring Cloud 2025 和 Spring Cloud Alibaba 2025 的 
 
 各业务微服务已经统一采用按受众划分的 Controller、按领域划分的 DTO/VO/Entity/Mapper，以及
 `IService + ServiceImpl` 业务层。服务专用辅助类留在各自的 `utils`、`support`、`cache` 等包，
-不把业务工具误放进全局公共模块。新增服务与目录归属以
+不把业务工具误放进全局公共模块。纯依赖注入使用 Lombok `@RequiredArgsConstructor` 与 `private final`；
+带初始化逻辑或参数级注入注解的构造器保留显式实现。新增服务与目录归属以
 [`后端包结构约定`](../docs/backend-package-conventions.md) 为准。
 
 ```text

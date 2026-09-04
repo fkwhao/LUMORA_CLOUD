@@ -17,6 +17,7 @@ import com.lumora.cloud.catalog.domain.dto.route.ModelRouteInput;
 import com.lumora.cloud.catalog.domain.vo.route.ModelRouteResponse;
 import com.lumora.cloud.catalog.utils.CatalogAmounts;
 import com.lumora.cloud.catalog.utils.CatalogInputMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,24 +28,13 @@ import java.util.List;
 import java.util.Locale;
 
 @Service
+@RequiredArgsConstructor
 public class ModelRouteService {
 
     private final ModelRouteMapper routeMapper;
     private final ModelRouteCostRuleMapper costRuleMapper;
     private final ProviderAccessService providerAccessService;
     private final CatalogInputMapper inputMapper;
-
-    public ModelRouteService(
-            ModelRouteMapper routeMapper,
-            ModelRouteCostRuleMapper costRuleMapper,
-            ProviderAccessService providerAccessService,
-            CatalogInputMapper inputMapper
-    ) {
-        this.routeMapper = routeMapper;
-        this.costRuleMapper = costRuleMapper;
-        this.providerAccessService = providerAccessService;
-        this.inputMapper = inputMapper;
-    }
 
     public void createPrimary(ModelVersionEntity version, ProviderEntity provider, ModelVersionValues values) {
         CostTimePricingPolicyValues policy = values.costTimePricingPolicy();

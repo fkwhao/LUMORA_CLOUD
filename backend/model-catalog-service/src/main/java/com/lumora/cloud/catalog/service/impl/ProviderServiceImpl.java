@@ -15,6 +15,7 @@ import com.lumora.cloud.catalog.service.IProviderCredentialService;
 import com.lumora.cloud.catalog.service.IProviderService;
 import com.lumora.cloud.catalog.support.ProviderAccessService;
 import com.lumora.cloud.catalog.utils.CatalogInputMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 
 @Service
+@RequiredArgsConstructor
 public class ProviderServiceImpl implements IProviderService {
 
     private final ProviderMapper providerMapper;
@@ -31,20 +33,6 @@ public class ProviderServiceImpl implements IProviderService {
     private final PublishedCatalogCache cache;
     private final IProviderCredentialService credentialService;
     private final ProviderAccessService providerAccessService;
-
-    public ProviderServiceImpl(
-            ProviderMapper providerMapper,
-            CatalogInputMapper inputMapper,
-            PublishedCatalogCache cache,
-            IProviderCredentialService credentialService,
-            ProviderAccessService providerAccessService
-    ) {
-        this.providerMapper = providerMapper;
-        this.inputMapper = inputMapper;
-        this.cache = cache;
-        this.credentialService = credentialService;
-        this.providerAccessService = providerAccessService;
-    }
 
     @Transactional
     public ProviderResponse create(CreateProviderRequest request) {

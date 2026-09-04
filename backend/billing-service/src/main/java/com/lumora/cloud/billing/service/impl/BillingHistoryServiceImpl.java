@@ -25,6 +25,7 @@ import com.lumora.cloud.billing.service.IBillingHistoryService;
 import com.lumora.cloud.billing.support.QuotaBucketService;
 import com.lumora.cloud.billing.utils.BillingAmounts;
 import com.lumora.cloud.billing.utils.BillingReportingPeriods;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class BillingHistoryServiceImpl implements IBillingHistoryService {
 
     private static final int DETAIL_LIMIT = 100;
@@ -47,22 +49,6 @@ public class BillingHistoryServiceImpl implements IBillingHistoryService {
     private final UsageDailySummaryMapper usageDailySummaryMapper;
     private final SubscriptionMapper subscriptionMapper;
     private final QuotaBucketService bucketService;
-
-    public BillingHistoryServiceImpl(
-            QuotaLedgerMapper ledgerMapper,
-            QuotaDailySummaryMapper quotaDailySummaryMapper,
-            UsageRecordMapper usageMapper,
-            UsageDailySummaryMapper usageDailySummaryMapper,
-            SubscriptionMapper subscriptionMapper,
-            QuotaBucketService bucketService
-    ) {
-        this.ledgerMapper = ledgerMapper;
-        this.quotaDailySummaryMapper = quotaDailySummaryMapper;
-        this.usageMapper = usageMapper;
-        this.usageDailySummaryMapper = usageDailySummaryMapper;
-        this.subscriptionMapper = subscriptionMapper;
-        this.bucketService = bucketService;
-    }
 
     @Override
     @Transactional

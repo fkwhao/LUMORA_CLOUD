@@ -15,6 +15,7 @@ import com.lumora.cloud.billing.domain.vo.plan.PlanResponse;
 import com.lumora.cloud.billing.service.IBillingCatalogService;
 import com.lumora.cloud.billing.support.PlanModelSelectionService;
 import com.lumora.cloud.billing.utils.BillingAmounts;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,24 +27,13 @@ import java.util.List;
 import java.util.Locale;
 
 @Service
+@RequiredArgsConstructor
 public class BillingCatalogServiceImpl implements IBillingCatalogService {
 
     private final BillingPlanMapper planMapper;
     private final PlanVersionMapper versionMapper;
     private final PlanVersionModelMapper versionModelMapper;
     private final PlanModelSelectionService modelSelection;
-
-    public BillingCatalogServiceImpl(
-            BillingPlanMapper planMapper,
-            PlanVersionMapper versionMapper,
-            PlanVersionModelMapper versionModelMapper,
-            PlanModelSelectionService modelSelection
-    ) {
-        this.planMapper = planMapper;
-        this.versionMapper = versionMapper;
-        this.versionModelMapper = versionModelMapper;
-        this.modelSelection = modelSelection;
-    }
 
     @Transactional
     public PlanResponse create(CreatePlanRequest request) {

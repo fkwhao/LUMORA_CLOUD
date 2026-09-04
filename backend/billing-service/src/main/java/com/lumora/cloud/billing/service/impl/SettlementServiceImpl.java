@@ -26,6 +26,7 @@ import com.lumora.cloud.billing.support.QuotaBucketService;
 import com.lumora.cloud.billing.support.QuotaLedgerWriter;
 import com.lumora.cloud.billing.utils.BillingAmounts;
 import com.lumora.cloud.billing.utils.BillingReportingPeriods;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class SettlementServiceImpl implements ISettlementService {
 
     private static final Duration DEFAULT_RESERVATION_TTL = Duration.ofMinutes(15);
@@ -49,26 +51,6 @@ public class SettlementServiceImpl implements ISettlementService {
     private final UsageDailySummaryMapper usageDailySummaryMapper;
     private final QuotaLedgerWriter ledgerWriter;
     private final PlanModelAccessService planModelAccess;
-
-    public SettlementServiceImpl(
-            ISubscriptionService subscriptionService,
-            QuotaBucketService bucketService,
-            QuotaBucketMapper bucketMapper,
-            ReservationMapper reservationMapper,
-            UsageRecordMapper usageMapper,
-            UsageDailySummaryMapper usageDailySummaryMapper,
-            QuotaLedgerWriter ledgerWriter,
-            PlanModelAccessService planModelAccess
-    ) {
-        this.subscriptionService = subscriptionService;
-        this.bucketService = bucketService;
-        this.bucketMapper = bucketMapper;
-        this.reservationMapper = reservationMapper;
-        this.usageMapper = usageMapper;
-        this.usageDailySummaryMapper = usageDailySummaryMapper;
-        this.ledgerWriter = ledgerWriter;
-        this.planModelAccess = planModelAccess;
-    }
 
     @Transactional
     public ReservationResponse reserve(ReserveRequest request) {

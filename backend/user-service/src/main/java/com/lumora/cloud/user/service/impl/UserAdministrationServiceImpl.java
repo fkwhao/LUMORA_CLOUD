@@ -22,6 +22,7 @@ import com.lumora.cloud.user.domain.vo.admin.AdminUserResponse;
 import com.lumora.cloud.user.domain.vo.admin.AdminUserStatisticsResponse;
 import com.lumora.cloud.user.domain.vo.admin.RoleResponse;
 import com.lumora.cloud.user.domain.vo.admin.UserSessionResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class UserAdministrationServiceImpl implements IUserAdministrationService {
 
     private static final ZoneId REPORTING_ZONE = ZoneId.of("Asia/Shanghai");
@@ -55,22 +57,6 @@ public class UserAdministrationServiceImpl implements IUserAdministrationService
     private final UserSessionMapper sessionMapper;
     private final RefreshTokenMapper refreshTokenMapper;
     private final ApplicationEventPublisher events;
-
-    public UserAdministrationServiceImpl(
-            UserAccountMapper userMapper,
-            RoleMapper roleMapper,
-            UserRoleMapper userRoleMapper,
-            UserSessionMapper sessionMapper,
-            RefreshTokenMapper refreshTokenMapper,
-            ApplicationEventPublisher events
-    ) {
-        this.userMapper = userMapper;
-        this.roleMapper = roleMapper;
-        this.userRoleMapper = userRoleMapper;
-        this.sessionMapper = sessionMapper;
-        this.refreshTokenMapper = refreshTokenMapper;
-        this.events = events;
-    }
 
     @Transactional(readOnly = true)
     @Override

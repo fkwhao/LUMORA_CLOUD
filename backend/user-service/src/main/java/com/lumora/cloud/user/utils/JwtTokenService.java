@@ -2,6 +2,7 @@ package com.lumora.cloud.user.utils;
 
 import com.lumora.cloud.user.config.AuthProperties;
 import com.lumora.cloud.user.domain.enums.ClientType;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -14,15 +15,11 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class JwtTokenService {
 
     private final JwtEncoder encoder;
     private final AuthProperties properties;
-
-    public JwtTokenService(JwtEncoder encoder, AuthProperties properties) {
-        this.encoder = encoder;
-        this.properties = properties;
-    }
 
     public AccessToken issue(
             Long userId,

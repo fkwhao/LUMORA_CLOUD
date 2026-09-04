@@ -17,6 +17,7 @@ import com.lumora.cloud.billing.domain.vo.subscription.SubscriptionResponse;
 import com.lumora.cloud.billing.service.IBillingCatalogService;
 import com.lumora.cloud.billing.service.ISubscriptionService;
 import com.lumora.cloud.billing.support.QuotaBucketService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class SubscriptionServiceImpl implements ISubscriptionService {
 
     private final BillingAccountMapper accountMapper;
@@ -34,20 +36,6 @@ public class SubscriptionServiceImpl implements ISubscriptionService {
     private final IBillingCatalogService catalogService;
     private final QuotaBucketService bucketService;
     private final PaymentProperties paymentProperties;
-
-    public SubscriptionServiceImpl(
-            BillingAccountMapper accountMapper,
-            SubscriptionMapper subscriptionMapper,
-            IBillingCatalogService catalogService,
-            QuotaBucketService bucketService,
-            PaymentProperties paymentProperties
-    ) {
-        this.accountMapper = accountMapper;
-        this.subscriptionMapper = subscriptionMapper;
-        this.catalogService = catalogService;
-        this.bucketService = bucketService;
-        this.paymentProperties = paymentProperties;
-    }
 
     @Transactional
     public SubscriptionResponse grant(GrantSubscriptionRequest request) {

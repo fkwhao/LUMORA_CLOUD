@@ -4,6 +4,7 @@ import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.security.GatewayRequestContext;
 import com.lumora.cloud.modelgateway.utils.RequestIds;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class RequestLeaseService {
 
     private static final String PREFIX = "lumora:model-gateway:request:";
@@ -27,16 +29,6 @@ public class RequestLeaseService {
     private final ReactiveStringRedisTemplate redis;
     private final ModelGatewayProperties properties;
     private final RequestIds requestIds;
-
-    public RequestLeaseService(
-            ReactiveStringRedisTemplate redis,
-            ModelGatewayProperties properties,
-            RequestIds requestIds
-    ) {
-        this.redis = redis;
-        this.properties = properties;
-        this.requestIds = requestIds;
-    }
 
     public Mono<RequestLease> acquire(GatewayRequestContext context) {
         String billingRequestId = requestIds.billingRequestId(context.userId(), context.clientRequestId());

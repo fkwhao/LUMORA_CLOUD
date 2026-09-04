@@ -13,6 +13,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
@@ -30,13 +31,10 @@ import java.util.List;
 @Validated
 @RestController
 @RequestMapping("/api/admin/users")
+@RequiredArgsConstructor
 public class UserAdminController {
 
     private final IUserAdministrationService userService;
-
-    public UserAdminController(IUserAdministrationService userService) {
-        this.userService = userService;
-    }
 
     @GetMapping
     public AdminUserPageResponse users(

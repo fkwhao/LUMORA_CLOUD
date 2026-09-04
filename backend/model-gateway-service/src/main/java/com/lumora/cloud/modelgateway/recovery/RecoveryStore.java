@@ -3,6 +3,7 @@ package com.lumora.cloud.modelgateway.recovery;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.Limit;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
@@ -15,6 +16,7 @@ import java.time.Instant;
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class RecoveryStore {
 
     private static final String COMMAND_PREFIX = "lumora:model-gateway:recovery:command:";
@@ -41,16 +43,6 @@ public class RecoveryStore {
     private final ReactiveStringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final ModelGatewayProperties properties;
-
-    public RecoveryStore(
-            ReactiveStringRedisTemplate redis,
-            ObjectMapper objectMapper,
-            ModelGatewayProperties properties
-    ) {
-        this.redis = redis;
-        this.objectMapper = objectMapper;
-        this.properties = properties;
-    }
 
     public Mono<Void> schedule(RecoveryCommand command, Instant dueAt) {
         try {

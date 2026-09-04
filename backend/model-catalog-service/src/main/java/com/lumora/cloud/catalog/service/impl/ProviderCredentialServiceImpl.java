@@ -13,6 +13,7 @@ import com.lumora.cloud.catalog.mapper.provider.ProviderCredentialMapper;
 import com.lumora.cloud.catalog.domain.vo.provider.ProviderCredentialStatusResponse;
 import com.lumora.cloud.catalog.service.IProviderCredentialService;
 import com.lumora.cloud.catalog.utils.ProviderCredentialCipher;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class ProviderCredentialServiceImpl implements IProviderCredentialService {
 
     public static final String MANAGED_REFERENCE_PREFIX = "cred_";
@@ -31,16 +33,6 @@ public class ProviderCredentialServiceImpl implements IProviderCredentialService
     private final ProviderCredentialMapper credentialMapper;
     private final ProviderCredentialAuditMapper auditMapper;
     private final ProviderCredentialCipher cipher;
-
-    public ProviderCredentialServiceImpl(
-            ProviderCredentialMapper credentialMapper,
-            ProviderCredentialAuditMapper auditMapper,
-            ProviderCredentialCipher cipher
-    ) {
-        this.credentialMapper = credentialMapper;
-        this.auditMapper = auditMapper;
-        this.cipher = cipher;
-    }
 
     @Override
     public String newReference() {

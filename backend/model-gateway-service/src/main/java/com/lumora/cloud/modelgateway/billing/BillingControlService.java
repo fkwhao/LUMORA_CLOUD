@@ -6,19 +6,17 @@ import com.lumora.cloud.api.billing.BillingContracts.ReserveRequest;
 import com.lumora.cloud.api.fallback.RemoteServiceUnavailableException;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import feign.FeignException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 @Component
+@RequiredArgsConstructor
 public class BillingControlService {
 
     private final BillingClient billingClient;
-
-    public BillingControlService(BillingClient billingClient) {
-        this.billingClient = billingClient;
-    }
 
     public Mono<ReservationResponse> reserve(ReserveRequest request) {
         return Mono.fromCallable(() -> billingClient.reserve(request))

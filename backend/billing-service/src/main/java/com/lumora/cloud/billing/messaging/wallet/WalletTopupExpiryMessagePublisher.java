@@ -1,6 +1,7 @@
 package com.lumora.cloud.billing.messaging.wallet;
 
 import com.lumora.cloud.billing.config.BillingMessagingConfiguration;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.MessageDeliveryMode;
@@ -13,14 +14,11 @@ import java.time.Duration;
 import java.time.Instant;
 
 @Component
+@RequiredArgsConstructor
 public class WalletTopupExpiryMessagePublisher {
 
     private static final Logger log = LoggerFactory.getLogger(WalletTopupExpiryMessagePublisher.class);
     private final RabbitTemplate rabbitTemplate;
-
-    public WalletTopupExpiryMessagePublisher(RabbitTemplate rabbitTemplate) {
-        this.rabbitTemplate = rabbitTemplate;
-    }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void publish(WalletTopupExpiryScheduledEvent event) {

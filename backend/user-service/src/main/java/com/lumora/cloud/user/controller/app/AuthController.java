@@ -14,6 +14,7 @@ import com.lumora.cloud.user.service.IAuthService;
 import com.lumora.cloud.user.utils.RequestMetadata;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -31,15 +32,11 @@ import java.time.Instant;
 
 @RestController
 @RequestMapping("/api/app/auth")
+@RequiredArgsConstructor
 public class AuthController {
 
     private final IAuthService authService;
     private final AuthProperties properties;
-
-    public AuthController(IAuthService authService, AuthProperties properties) {
-        this.authService = authService;
-        this.properties = properties;
-    }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(

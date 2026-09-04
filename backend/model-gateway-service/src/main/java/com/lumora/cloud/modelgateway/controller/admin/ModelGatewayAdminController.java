@@ -9,6 +9,7 @@ import com.lumora.cloud.modelgateway.domain.vo.diagnostics.GatewayDiagnosticsRes
 import com.lumora.cloud.modelgateway.domain.vo.diagnostics.GatewayDiagnosticsSummary;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,21 +24,12 @@ import java.util.List;
 @Validated
 @RestController
 @RequestMapping("/api/admin/model-gateway")
+@RequiredArgsConstructor
 public class ModelGatewayAdminController {
 
     private final ModelGatewayAccess access;
     private final GatewayDiagnosticsStore diagnostics;
     private final GatewayDiagnosticsProperties properties;
-
-    public ModelGatewayAdminController(
-            ModelGatewayAccess access,
-            GatewayDiagnosticsStore diagnostics,
-            GatewayDiagnosticsProperties properties
-    ) {
-        this.access = access;
-        this.diagnostics = diagnostics;
-        this.properties = properties;
-    }
 
     @GetMapping("/diagnostics")
     public Mono<GatewayDiagnosticsResponse> diagnostics(

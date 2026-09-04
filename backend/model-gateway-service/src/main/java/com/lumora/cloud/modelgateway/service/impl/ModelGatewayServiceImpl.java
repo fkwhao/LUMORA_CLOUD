@@ -41,6 +41,7 @@ import com.lumora.cloud.modelgateway.protocol.LumoraProtocolAdapter;
 import com.lumora.cloud.modelgateway.service.IModelGatewayService;
 import com.lumora.cloud.modelgateway.utils.RequestIds;
 import com.lumora.cloud.modelgateway.validation.ChatRequestValidator;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
@@ -61,6 +62,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 @Service
+@RequiredArgsConstructor
 public class ModelGatewayServiceImpl implements IModelGatewayService {
 
     private static final Logger log = LoggerFactory.getLogger(ModelGatewayServiceImpl.class);
@@ -82,44 +84,6 @@ public class ModelGatewayServiceImpl implements IModelGatewayService {
     private final LumoraProtocolAdapter lumoraProtocol;
     private final ObjectMapper objectMapper;
     private final ModelGatewayProperties properties;
-
-    public ModelGatewayServiceImpl(
-            ChatRequestValidator validator,
-            ModelConfigCache modelCache,
-            ProviderCredentialResolver credentials,
-            QuotaCalculator quotaCalculator,
-            RequestIds requestIds,
-            RequestLeaseService requestLeases,
-            DistributedConcurrencyLimiter concurrencyLimiter,
-            UpstreamRouteSelector routeSelector,
-            RouteCircuitBreaker routeCircuitBreaker,
-            DistributedRouteRateLimiter routeRateLimiter,
-            BillingControlService billing,
-            BillingRecoveryService recovery,
-            ModelProviderClient providerClient,
-            ProviderUsageParser usageParser,
-            LumoraProtocolAdapter lumoraProtocol,
-            ObjectMapper objectMapper,
-            ModelGatewayProperties properties
-    ) {
-        this.validator = validator;
-        this.modelCache = modelCache;
-        this.credentials = credentials;
-        this.quotaCalculator = quotaCalculator;
-        this.requestIds = requestIds;
-        this.requestLeases = requestLeases;
-        this.concurrencyLimiter = concurrencyLimiter;
-        this.routeSelector = routeSelector;
-        this.routeCircuitBreaker = routeCircuitBreaker;
-        this.routeRateLimiter = routeRateLimiter;
-        this.billing = billing;
-        this.recovery = recovery;
-        this.providerClient = providerClient;
-        this.usageParser = usageParser;
-        this.lumoraProtocol = lumoraProtocol;
-        this.objectMapper = objectMapper;
-        this.properties = properties;
-    }
 
     @Override
     public Mono<ModelGatewayResponse> invoke(

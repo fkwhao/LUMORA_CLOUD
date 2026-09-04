@@ -1,6 +1,6 @@
 # Lumora Cloud 后端包结构约定
 
-最后同步：2026-09-03。
+最后同步：2026-09-04。
 
 本文定义 Lumora Cloud 各 Java 微服务内部的统一包结构。目标是让业务边界、调用方向和文件归属能够
 直接从目录中判断，避免所有 Controller、DTO、Mapper 和辅助类堆在同一层。新服务默认遵循本文；
@@ -62,6 +62,33 @@ Controller、监听器以及其他跨用例调用方依赖 `IOrderService`，不
 
 这些组件分别进入 `utils`、`support`、`cache`、`routing`、`job` 或 `messaging`。这样既保留
 `IService + ServiceImpl` 的可读性，也不会为每个小工具生成一套空接口。
+
+### 构造器注入与 Lombok
+
+纯依赖注入统一使用 `@RequiredArgsConstructor` 配合 `private final` 字段，适用于 Controller、
+ServiceImpl、监听器、任务及其他 Spring 组件。它仍然是构造器注入，只是由 Lombok 生成构造器，
+不改成字段 `@Autowired` 注入，也不需要额外添加 `@AllArgsConstructor` 或 `@NonNull`。
+
+```java
+@Service
+@RequiredArgsConstructor
+public class PurchaseOrderServiceImpl implements IPurchaseOrderService {
+    private final PurchaseOrderMapper orderMapper;
+    private final ISubscriptionService subscriptionService;
+}
+```
+
+构造器参数顺序由字段声明顺序决定；替换已有构造器时必须保持原参数顺序，兼容直接 `new` 的单元测试。
+Lombok 编译依赖和注解处理器统一配置在 `backend/pom.xml`，版本沿用 Spring Boot 的依赖管理；依赖使用
+`provided`，并从 Spring Boot 可执行包中排除。显式配置注解处理器，确保使用 JDK 23+ 编译时也能生成代码。
+
+以下情况保留显式构造器，不为了缩短代码改变初始化和注入语义：
+
+- 构造器还负责缓存构建、密钥校验、派生字段计算或参数归一化，而不只是 `this.field = field`。
+- 参数带 `@Value`、`@Qualifier` 等注入注解；Lombok 默认不会自动复制这些参数注解，不能直接删掉。
+- 对象存在重载构造器、兼容构造器或明确的非 Spring 创建规则。
+
+DTO、Entity、异常和值对象不在本次注入简化范围内；不要顺带使用 `@Data` 等注解改变它们的行为。
 
 ## 3. 各层职责与依赖方向
 
@@ -148,7 +175,8 @@ src/test/java/com/lumora/cloud/<service>/
 
 1. Maven 模块与其他 Service 平级，由 `backend/pom.xml` 直接聚合。
 2. Controller 已按 app、admin、internal 调用方分组。
-3. 业务用例使用 `IService + ServiceImpl`，辅助组件没有滥建接口。
+3. 业务用例使用 `IService + ServiceImpl`，辅助组件没有滥建接口；纯注入采用 `@RequiredArgsConstructor`
+   与 `private final`，特殊初始化或参数注解保留显式构造器。
 4. DTO、VO、Entity、Projection 和跨服务合同没有混放。
 5. Mapper 只访问本服务数据库，Flyway 脚本位于本服务 `db/migration`。
 6. 服务专用工具留在本服务 `utils`，没有把业务规则错误上移到 `cloud-common`。

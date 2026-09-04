@@ -2,6 +2,7 @@ package com.lumora.cloud.gateway.security;
 
 import com.lumora.cloud.api.AuthHeaders;
 import com.lumora.cloud.gateway.config.GatewayAuthProperties;
+import lombok.RequiredArgsConstructor;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -20,21 +21,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class GatewayIdentityRelayFilter implements GlobalFilter, Ordered {
 
     private final ReactiveStringRedisTemplate redis;
     private final GatewayAuthProperties properties;
     private final GatewayErrorResponseWriter errorWriter;
-
-    public GatewayIdentityRelayFilter(
-            ReactiveStringRedisTemplate redis,
-            GatewayAuthProperties properties,
-            GatewayErrorResponseWriter errorWriter
-    ) {
-        this.redis = redis;
-        this.properties = properties;
-        this.errorWriter = errorWriter;
-    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {

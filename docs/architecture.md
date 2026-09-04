@@ -35,7 +35,8 @@ Desktop 与网页控制台使用独立登录会话。网页 URL 不携带 Deskto
 
 业务服务内部统一按 `controller/{app,admin,internal}`、`domain/{dto,vo,entity,enums,model}`、
 `mapper/<feature>`、`service/impl` 组织。稳定业务用例使用 `IService + ServiceImpl`，缓存、路由、
-协议转换、审计、任务和服务专用工具按职责进入独立包，不为每个辅助类机械创建接口。完整规则和
+协议转换、审计、任务和服务专用工具按职责进入独立包，不为每个辅助类机械创建接口。纯注入统一采用
+`@RequiredArgsConstructor` 与 `private final`，特殊构造器保留初始化及参数注解语义。完整规则和
 新服务检查表见 [`后端包结构约定`](backend-package-conventions.md)。
 
 ## 3. 数据库与迁移

@@ -9,6 +9,7 @@ import com.lumora.cloud.billing.mapper.usage.UsageRecordMapper;
 import com.lumora.cloud.billing.domain.vo.statistics.AdminBillingStatisticsResponse;
 import com.lumora.cloud.billing.domain.vo.statistics.CurrencyRevenueResponse;
 import com.lumora.cloud.billing.service.IBillingStatisticsService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
 @Service
+@RequiredArgsConstructor
 public class BillingStatisticsServiceImpl implements IBillingStatisticsService {
 
     private static final ZoneId REPORTING_ZONE = ZoneId.of("Asia/Shanghai");
@@ -25,18 +27,6 @@ public class BillingStatisticsServiceImpl implements IBillingStatisticsService {
     private final SubscriptionMapper subscriptionMapper;
     private final PurchaseOrderMapper orderMapper;
     private final UsageRecordMapper usageMapper;
-
-    public BillingStatisticsServiceImpl(
-            BillingPlanMapper planMapper,
-            SubscriptionMapper subscriptionMapper,
-            PurchaseOrderMapper orderMapper,
-            UsageRecordMapper usageMapper
-    ) {
-        this.planMapper = planMapper;
-        this.subscriptionMapper = subscriptionMapper;
-        this.orderMapper = orderMapper;
-        this.usageMapper = usageMapper;
-    }
 
     @Transactional(readOnly = true)
     public AdminBillingStatisticsResponse statistics() {

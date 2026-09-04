@@ -18,6 +18,7 @@ import com.lumora.cloud.billing.domain.vo.wallet.WalletLedgerEntryResponse;
 import com.lumora.cloud.billing.domain.vo.wallet.WalletOverviewResponse;
 import com.lumora.cloud.billing.domain.vo.wallet.WalletTopupOrderResponse;
 import com.lumora.cloud.billing.service.IWalletService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class WalletServiceImpl implements IWalletService {
 
     private static final String DEFAULT_CURRENCY = "CNY";
@@ -42,20 +44,6 @@ public class WalletServiceImpl implements IWalletService {
     private final WalletLedgerMapper ledgerMapper;
     private final PaymentProperties paymentProperties;
     private final ApplicationEventPublisher events;
-
-    public WalletServiceImpl(
-            WalletAccountMapper accountMapper,
-            WalletTopupOrderMapper topupMapper,
-            WalletLedgerMapper ledgerMapper,
-            PaymentProperties paymentProperties,
-            ApplicationEventPublisher events
-    ) {
-        this.accountMapper = accountMapper;
-        this.topupMapper = topupMapper;
-        this.ledgerMapper = ledgerMapper;
-        this.paymentProperties = paymentProperties;
-        this.events = events;
-    }
 
     @Transactional
     public WalletOverviewResponse overview(Long userId) {

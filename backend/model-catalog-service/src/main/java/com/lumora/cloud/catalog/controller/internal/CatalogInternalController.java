@@ -7,6 +7,7 @@ import com.lumora.cloud.catalog.security.InternalRequestAuthorizer;
 import com.lumora.cloud.catalog.service.IProviderCredentialService;
 import com.lumora.cloud.catalog.service.IPublishedCatalogService;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,21 +19,12 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/internal/catalog")
+@RequiredArgsConstructor
 public class CatalogInternalController {
 
     private final InternalRequestAuthorizer authorizer;
     private final IPublishedCatalogService catalogService;
     private final IProviderCredentialService credentialService;
-
-    public CatalogInternalController(
-            InternalRequestAuthorizer authorizer,
-            IPublishedCatalogService catalogService,
-            IProviderCredentialService credentialService
-    ) {
-        this.authorizer = authorizer;
-        this.catalogService = catalogService;
-        this.credentialService = credentialService;
-    }
 
     @GetMapping("/models")
     public List<ResolvedModelConfig> models(HttpServletRequest request) {

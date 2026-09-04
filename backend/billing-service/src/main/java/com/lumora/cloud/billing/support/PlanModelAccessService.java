@@ -4,19 +4,16 @@ import com.lumora.cloud.billing.error.ApiException;
 import com.lumora.cloud.billing.domain.entity.plan.PlanVersionEntity;
 import com.lumora.cloud.billing.mapper.plan.PlanVersionMapper;
 import com.lumora.cloud.billing.mapper.plan.PlanVersionModelMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class PlanModelAccessService {
 
     private final PlanVersionMapper versionMapper;
     private final PlanVersionModelMapper modelMapper;
-
-    public PlanModelAccessService(PlanVersionMapper versionMapper, PlanVersionModelMapper modelMapper) {
-        this.versionMapper = versionMapper;
-        this.modelMapper = modelMapper;
-    }
 
     public void requireAllowed(Long planVersionId, String modelCode) {
         PlanVersionEntity version = versionMapper.findPublishedById(planVersionId);

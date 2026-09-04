@@ -3,6 +3,7 @@ package com.lumora.cloud.billing.support;
 import com.lumora.cloud.api.catalog.CatalogClient;
 import com.lumora.cloud.api.catalog.CatalogContracts.PublishedModelReference;
 import com.lumora.cloud.billing.error.ApiException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -12,13 +13,10 @@ import java.util.Locale;
 import java.util.Set;
 
 @Service
+@RequiredArgsConstructor
 public class PlanModelSelectionService {
 
     private final CatalogClient catalogClient;
-
-    public PlanModelSelectionService(CatalogClient catalogClient) {
-        this.catalogClient = catalogClient;
-    }
 
     public List<String> normalizeAndValidate(List<String> modelCodes) {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();

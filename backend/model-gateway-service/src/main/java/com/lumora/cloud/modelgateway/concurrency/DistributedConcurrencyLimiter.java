@@ -3,6 +3,7 @@ package com.lumora.cloud.modelgateway.concurrency;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelRoute;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
 import com.lumora.cloud.modelgateway.error.ApiException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class DistributedConcurrencyLimiter {
 
     private static final Logger log = LoggerFactory.getLogger(DistributedConcurrencyLimiter.class);
@@ -36,14 +38,6 @@ public class DistributedConcurrencyLimiter {
             """, Long.class);
     private final ReactiveStringRedisTemplate redis;
     private final ModelGatewayProperties properties;
-
-    public DistributedConcurrencyLimiter(
-            ReactiveStringRedisTemplate redis,
-            ModelGatewayProperties properties
-    ) {
-        this.redis = redis;
-        this.properties = properties;
-    }
 
     public Mono<ConcurrencyPermit> acquire(long userId, String modelCode) {
         return acquire(userId, modelCode, null);

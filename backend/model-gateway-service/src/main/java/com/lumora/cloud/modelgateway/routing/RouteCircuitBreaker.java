@@ -13,6 +13,7 @@ import com.lumora.cloud.modelgateway.config.RouteProtectionProperties;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.provider.ProviderHttpException;
 import com.lumora.cloud.modelgateway.provider.ProviderCall;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -22,16 +23,13 @@ import java.util.function.Supplier;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
+@RequiredArgsConstructor
 public class RouteCircuitBreaker {
 
     private static final String RESOURCE_PREFIX = "lumora:model-route:";
 
     private final RouteProtectionProperties properties;
     private final Map<String, DegradeRule> rules = new HashMap<>();
-
-    public RouteCircuitBreaker(RouteProtectionProperties properties) {
-        this.properties = properties;
-    }
 
     public Mono<ProviderCall> protect(ResolvedModelRoute route, Supplier<Mono<ProviderCall>> operation) {
         if (!route.circuitBreakerEnabled()) {

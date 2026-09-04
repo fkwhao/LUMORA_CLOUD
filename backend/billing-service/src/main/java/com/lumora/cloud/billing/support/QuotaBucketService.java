@@ -9,6 +9,7 @@ import com.lumora.cloud.billing.mapper.plan.PlanVersionMapper;
 import com.lumora.cloud.billing.mapper.quota.QuotaBucketMapper;
 import com.lumora.cloud.billing.utils.BillingAmounts;
 import com.lumora.cloud.billing.utils.QuotaCycleCalculator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -16,24 +17,13 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class QuotaBucketService {
 
     private final QuotaCycleCalculator cycleCalculator;
     private final PlanVersionMapper versionMapper;
     private final QuotaBucketMapper bucketMapper;
     private final QuotaLedgerWriter ledgerWriter;
-
-    public QuotaBucketService(
-            QuotaCycleCalculator cycleCalculator,
-            PlanVersionMapper versionMapper,
-            QuotaBucketMapper bucketMapper,
-            QuotaLedgerWriter ledgerWriter
-    ) {
-        this.cycleCalculator = cycleCalculator;
-        this.versionMapper = versionMapper;
-        this.bucketMapper = bucketMapper;
-        this.ledgerWriter = ledgerWriter;
-    }
 
     public QuotaBucketEntity currentForUpdate(SubscriptionEntity subscription, Instant now) {
         QuotaCycleCalculator.Cycle cycle = cycleCalculator.current(subscription, now);

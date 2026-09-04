@@ -19,6 +19,7 @@ import com.lumora.cloud.billing.domain.vo.wallet.WalletOverviewResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.http.HttpStatus;
@@ -36,6 +37,7 @@ import java.util.List;
 @RestController
 @Validated
 @RequestMapping("/api/admin/billing")
+@RequiredArgsConstructor
 public class BillingAdminController {
 
     private final BillingAccess access;
@@ -44,22 +46,6 @@ public class BillingAdminController {
     private final IPurchaseOrderService orderService;
     private final IBillingStatisticsService statisticsService;
     private final IWalletService walletService;
-
-    public BillingAdminController(
-            BillingAccess access,
-            IBillingCatalogService catalogService,
-            ISubscriptionService subscriptionService,
-            IPurchaseOrderService orderService,
-            IBillingStatisticsService statisticsService,
-            IWalletService walletService
-    ) {
-        this.access = access;
-        this.catalogService = catalogService;
-        this.subscriptionService = subscriptionService;
-        this.orderService = orderService;
-        this.statisticsService = statisticsService;
-        this.walletService = walletService;
-    }
 
     @GetMapping("/plans")
     public List<PlanResponse> plans() {

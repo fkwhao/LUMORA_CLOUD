@@ -5,6 +5,7 @@ import com.lumora.cloud.user.domain.enums.LoginOutcome;
 import com.lumora.cloud.user.domain.entity.LoginAuditEntity;
 import com.lumora.cloud.user.mapper.LoginAuditMapper;
 import com.lumora.cloud.user.utils.RequestMetadata;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,13 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 
 @Service
+@RequiredArgsConstructor
 public class LoginAuditService {
 
     private final LoginAuditMapper mapper;
-
-    public LoginAuditService(LoginAuditMapper mapper) {
-        this.mapper = mapper;
-    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(

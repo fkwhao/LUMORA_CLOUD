@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lumora.cloud.api.AuthHeaders;
 import com.lumora.cloud.common.ApiError;
 import com.lumora.cloud.common.logging.SafeRequestErrorLogger;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
@@ -23,15 +24,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class GatewayErrorResponseWriter implements ServerAuthenticationEntryPoint, ServerAccessDeniedHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayErrorResponseWriter.class);
 
     private final ObjectMapper objectMapper;
-
-    public GatewayErrorResponseWriter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
 
     @Override
     public Mono<Void> commence(ServerWebExchange exchange, AuthenticationException exception) {

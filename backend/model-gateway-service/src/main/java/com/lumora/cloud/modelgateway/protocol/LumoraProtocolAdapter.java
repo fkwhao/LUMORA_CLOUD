@@ -11,6 +11,7 @@ import com.lumora.cloud.api.catalog.ProviderProtocol;
 import com.lumora.cloud.modelgateway.domain.model.TokenUsage;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.provider.ProviderUsageParser;
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
@@ -34,6 +35,7 @@ import java.util.UUID;
  * Provider-specific JSON is created and consumed only inside Model Gateway.
  */
 @Component
+@RequiredArgsConstructor
 public class LumoraProtocolAdapter {
 
     public static final String VERSION = "1";
@@ -41,11 +43,6 @@ public class LumoraProtocolAdapter {
 
     private final ObjectMapper objectMapper;
     private final ProviderUsageParser usageParser;
-
-    public LumoraProtocolAdapter(ObjectMapper objectMapper, ProviderUsageParser usageParser) {
-        this.objectMapper = objectMapper;
-        this.usageParser = usageParser;
-    }
 
     public ObjectNode upstreamBody(
             ObjectNode request,

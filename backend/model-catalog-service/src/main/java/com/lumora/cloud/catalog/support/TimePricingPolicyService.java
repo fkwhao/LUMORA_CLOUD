@@ -11,6 +11,7 @@ import com.lumora.cloud.catalog.domain.vo.pricing.CostTimePricingPolicy;
 import com.lumora.cloud.catalog.domain.vo.pricing.CostTimePricingRule;
 import com.lumora.cloud.catalog.domain.vo.pricing.QuotaTimePricingPolicy;
 import com.lumora.cloud.catalog.domain.vo.pricing.QuotaTimePricingRule;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -18,13 +19,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class TimePricingPolicyService {
 
     private final ModelTimePricingRuleMapper ruleMapper;
-
-    public TimePricingPolicyService(ModelTimePricingRuleMapper ruleMapper) {
-        this.ruleMapper = ruleMapper;
-    }
 
     public void replace(
             String versionId,

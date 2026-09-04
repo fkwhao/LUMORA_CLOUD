@@ -4,17 +4,15 @@ import com.lumora.cloud.catalog.domain.entity.provider.ProviderEntity;
 import com.lumora.cloud.catalog.domain.enums.ProviderStatus;
 import com.lumora.cloud.catalog.error.ApiException;
 import com.lumora.cloud.catalog.mapper.provider.ProviderMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class ProviderAccessService {
 
     private final ProviderMapper providerMapper;
-
-    public ProviderAccessService(ProviderMapper providerMapper) {
-        this.providerMapper = providerMapper;
-    }
 
     public ProviderEntity requireActiveForUpdate(Long providerId) {
         ProviderEntity provider = requireForUpdate(providerId);

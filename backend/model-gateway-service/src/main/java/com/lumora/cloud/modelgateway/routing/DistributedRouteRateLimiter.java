@@ -3,6 +3,7 @@ package com.lumora.cloud.modelgateway.routing;
 import com.lumora.cloud.api.catalog.CatalogContracts.ResolvedModelRoute;
 import com.lumora.cloud.modelgateway.concurrency.RouteCapacityException;
 import com.lumora.cloud.modelgateway.error.ApiException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class DistributedRouteRateLimiter {
 
     private static final String PREFIX = "lumora:model-gateway:rate:";
@@ -35,10 +37,6 @@ public class DistributedRouteRateLimiter {
             """, Long.class);
 
     private final ReactiveStringRedisTemplate redis;
-
-    public DistributedRouteRateLimiter(ReactiveStringRedisTemplate redis) {
-        this.redis = redis;
-    }
 
     public Mono<Void> acquire(ResolvedModelRoute route, long estimatedTokens) {
         long minute = Instant.now().getEpochSecond() / 60;

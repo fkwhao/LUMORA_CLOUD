@@ -18,6 +18,7 @@ import com.lumora.cloud.billing.service.IBillingCatalogService;
 import com.lumora.cloud.billing.service.IPurchaseOrderService;
 import com.lumora.cloud.billing.service.ISubscriptionService;
 import com.lumora.cloud.billing.service.IWalletService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class PurchaseOrderServiceImpl implements IPurchaseOrderService {
 
     private static final DateTimeFormatter ORDER_TIME = DateTimeFormatter
@@ -43,24 +45,6 @@ public class PurchaseOrderServiceImpl implements IPurchaseOrderService {
     private final IWalletService walletService;
     private final PaymentProperties properties;
     private final ApplicationEventPublisher events;
-
-    public PurchaseOrderServiceImpl(
-            PurchaseOrderMapper orderMapper,
-            PaymentAttemptMapper paymentMapper,
-            IBillingCatalogService catalogService,
-            ISubscriptionService subscriptionService,
-            IWalletService walletService,
-            PaymentProperties properties,
-            ApplicationEventPublisher events
-    ) {
-        this.orderMapper = orderMapper;
-        this.paymentMapper = paymentMapper;
-        this.catalogService = catalogService;
-        this.subscriptionService = subscriptionService;
-        this.walletService = walletService;
-        this.properties = properties;
-        this.events = events;
-    }
 
     @Transactional
     public PurchaseOrderResponse create(

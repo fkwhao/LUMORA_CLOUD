@@ -10,30 +10,20 @@ import com.lumora.cloud.catalog.mapper.model.ModelVersionMapper;
 import com.lumora.cloud.catalog.mapper.provider.ProviderMapper;
 import com.lumora.cloud.catalog.domain.vo.statistics.AdminCatalogStatisticsResponse;
 import com.lumora.cloud.catalog.service.ICatalogStatisticsService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 
 @Service
+@RequiredArgsConstructor
 public class CatalogStatisticsServiceImpl implements ICatalogStatisticsService {
 
     private final ProviderMapper providerMapper;
     private final ModelDefinitionMapper modelMapper;
     private final ModelVersionMapper versionMapper;
     private final CatalogQueryMapper queryMapper;
-
-    public CatalogStatisticsServiceImpl(
-            ProviderMapper providerMapper,
-            ModelDefinitionMapper modelMapper,
-            ModelVersionMapper versionMapper,
-            CatalogQueryMapper queryMapper
-    ) {
-        this.providerMapper = providerMapper;
-        this.modelMapper = modelMapper;
-        this.versionMapper = versionMapper;
-        this.queryMapper = queryMapper;
-    }
 
     @Transactional(readOnly = true)
     @Override

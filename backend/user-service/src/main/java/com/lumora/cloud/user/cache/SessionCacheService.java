@@ -1,6 +1,7 @@
 package com.lumora.cloud.user.cache;
 
 import com.lumora.cloud.api.AuthHeaders;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -8,13 +9,10 @@ import java.time.Duration;
 import java.time.Instant;
 
 @Service
+@RequiredArgsConstructor
 public class SessionCacheService {
 
     private final StringRedisTemplate redis;
-
-    public SessionCacheService(StringRedisTemplate redis) {
-        this.redis = redis;
-    }
 
     public void remember(String sessionId, Long userId, Instant expiresAt, Instant now) {
         Duration ttl = positiveDuration(now, expiresAt);

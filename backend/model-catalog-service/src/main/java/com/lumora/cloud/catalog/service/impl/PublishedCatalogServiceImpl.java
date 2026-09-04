@@ -15,6 +15,7 @@ import com.lumora.cloud.catalog.cache.PublishedCatalogCache;
 import com.lumora.cloud.catalog.service.IPublishedCatalogService;
 import com.lumora.cloud.catalog.support.ModelRouteService;
 import com.lumora.cloud.catalog.support.TimePricingPolicyService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,24 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class PublishedCatalogServiceImpl implements IPublishedCatalogService {
 
     private final CatalogQueryMapper queryMapper;
     private final PublishedCatalogCache cache;
     private final TimePricingPolicyService timePricingPolicyService;
     private final ModelRouteService routeService;
-
-    public PublishedCatalogServiceImpl(
-            CatalogQueryMapper queryMapper,
-            PublishedCatalogCache cache,
-            TimePricingPolicyService timePricingPolicyService,
-            ModelRouteService routeService
-    ) {
-        this.queryMapper = queryMapper;
-        this.cache = cache;
-        this.timePricingPolicyService = timePricingPolicyService;
-        this.routeService = routeService;
-    }
 
     @Transactional(readOnly = true)
     @Override

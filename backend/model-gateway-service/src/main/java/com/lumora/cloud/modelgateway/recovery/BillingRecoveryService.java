@@ -5,6 +5,7 @@ import com.lumora.cloud.api.billing.BillingContracts.PendingRequest;
 import com.lumora.cloud.api.billing.BillingContracts.ReleaseRequest;
 import com.lumora.cloud.api.billing.BillingContracts.SettleRequest;
 import com.lumora.cloud.modelgateway.config.ModelGatewayProperties;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 
 @Component
+@RequiredArgsConstructor
 public class BillingRecoveryService {
 
     private static final Logger log = LoggerFactory.getLogger(BillingRecoveryService.class);
@@ -23,16 +25,6 @@ public class BillingRecoveryService {
     private final BillingClient billingClient;
     private final RecoveryStore store;
     private final ModelGatewayProperties properties;
-
-    public BillingRecoveryService(
-            BillingClient billingClient,
-            RecoveryStore store,
-            ModelGatewayProperties properties
-    ) {
-        this.billingClient = billingClient;
-        this.store = store;
-        this.properties = properties;
-    }
 
     public Mono<Boolean> settle(String requestId, SettleRequest request) {
         return scheduleAndExecute(new RecoveryCommand(

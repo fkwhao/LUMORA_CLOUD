@@ -7,6 +7,7 @@ import com.lumora.cloud.modelgateway.diagnostics.GatewayDiagnosticsStore;
 import com.lumora.cloud.modelgateway.error.ApiException;
 import com.lumora.cloud.modelgateway.security.ModelGatewayAccess;
 import com.lumora.cloud.modelgateway.service.IModelGatewayService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,21 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/api/app/model/v1")
+@RequiredArgsConstructor
 public class ModelGatewayController {
 
     private final ModelGatewayAccess access;
     private final IModelGatewayService modelGatewayService;
     private final GatewayDiagnosticsStore diagnostics;
-
-    public ModelGatewayController(
-            ModelGatewayAccess access,
-            IModelGatewayService modelGatewayService,
-            GatewayDiagnosticsStore diagnostics
-    ) {
-        this.access = access;
-        this.modelGatewayService = modelGatewayService;
-        this.diagnostics = diagnostics;
-    }
 
     @PostMapping(value = "/chat/completions", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Flux<org.springframework.core.io.buffer.DataBuffer>>> chatCompletions(

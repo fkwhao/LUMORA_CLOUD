@@ -19,6 +19,7 @@ import com.lumora.cloud.catalog.domain.dto.model.UpdateModelStatusRequest;
 import com.lumora.cloud.catalog.domain.dto.route.UpdateModelRouteRequest;
 import com.lumora.cloud.catalog.domain.dto.provider.UpdateProviderRequest;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,24 +36,13 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin/catalog")
+@RequiredArgsConstructor
 public class CatalogAdminController {
 
     private final CatalogAccess access;
     private final IProviderService providerService;
     private final IModelAdministrationService modelService;
     private final ICatalogStatisticsService statisticsService;
-
-    public CatalogAdminController(
-            CatalogAccess access,
-            IProviderService providerService,
-            IModelAdministrationService modelService,
-            ICatalogStatisticsService statisticsService
-    ) {
-        this.access = access;
-        this.providerService = providerService;
-        this.modelService = modelService;
-        this.statisticsService = statisticsService;
-    }
 
     @GetMapping("/providers")
     public List<ProviderResponse> providers() {

@@ -28,6 +28,7 @@ import com.lumora.cloud.catalog.support.ModelRouteService;
 import com.lumora.cloud.catalog.support.ProviderAccessService;
 import com.lumora.cloud.catalog.support.TimePricingPolicyService;
 import com.lumora.cloud.catalog.utils.CatalogInputMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ModelAdministrationServiceImpl implements IModelAdministrationService {
 
     private final ModelDefinitionMapper modelMapper;
@@ -49,26 +51,6 @@ public class ModelAdministrationServiceImpl implements IModelAdministrationServi
     private final TimePricingPolicyService timePricingPolicyService;
     private final ModelRouteService routeService;
     private final PublishedCatalogCache cache;
-
-    public ModelAdministrationServiceImpl(
-            ModelDefinitionMapper modelMapper,
-            ModelVersionMapper versionMapper,
-            ProviderMapper providerMapper,
-            ProviderAccessService providerAccessService,
-            CatalogInputMapper inputMapper,
-            TimePricingPolicyService timePricingPolicyService,
-            ModelRouteService routeService,
-            PublishedCatalogCache cache
-    ) {
-        this.modelMapper = modelMapper;
-        this.versionMapper = versionMapper;
-        this.providerMapper = providerMapper;
-        this.providerAccessService = providerAccessService;
-        this.inputMapper = inputMapper;
-        this.timePricingPolicyService = timePricingPolicyService;
-        this.routeService = routeService;
-        this.cache = cache;
-    }
 
     @Transactional
     public AdminModelResponse create(CreateModelRequest request) {

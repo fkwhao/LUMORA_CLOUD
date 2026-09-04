@@ -9,6 +9,7 @@ import com.lumora.cloud.api.billing.BillingContracts.SettlementResponse;
 import com.lumora.cloud.billing.security.InternalRequestAuthorizer;
 import com.lumora.cloud.billing.service.ISettlementService;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,15 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/internal/billing")
+@RequiredArgsConstructor
 public class BillingInternalController {
 
     private final InternalRequestAuthorizer authorizer;
     private final ISettlementService settlementService;
-
-    public BillingInternalController(InternalRequestAuthorizer authorizer, ISettlementService settlementService) {
-        this.authorizer = authorizer;
-        this.settlementService = settlementService;
-    }
 
     @PostMapping("/reservations")
     public ReservationResponse reserve(HttpServletRequest servletRequest, @RequestBody ReserveRequest request) {

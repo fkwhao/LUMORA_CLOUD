@@ -22,6 +22,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.validation.annotation.Validated;
@@ -41,6 +42,7 @@ import java.util.List;
 @RestController
 @Validated
 @RequestMapping("/api/app/billing")
+@RequiredArgsConstructor
 public class BillingAppController {
 
     private final BillingAccess access;
@@ -49,22 +51,6 @@ public class BillingAppController {
     private final IBillingHistoryService historyService;
     private final IPurchaseOrderService orderService;
     private final IWalletService walletService;
-
-    public BillingAppController(
-            BillingAccess access,
-            IBillingCatalogService catalogService,
-            ISubscriptionService subscriptionService,
-            IBillingHistoryService historyService,
-            IPurchaseOrderService orderService,
-            IWalletService walletService
-    ) {
-        this.access = access;
-        this.catalogService = catalogService;
-        this.subscriptionService = subscriptionService;
-        this.historyService = historyService;
-        this.orderService = orderService;
-        this.walletService = walletService;
-    }
 
     @GetMapping("/plans")
     public List<PlanResponse> plans() {
