@@ -13,10 +13,12 @@ export type AppRoute =
   | "admin-providers"
   | "admin-users"
   | "admin-wallets"
-  | "admin-gateway";
+  | "admin-gateway"
+  | "admin-reconciliation";
 
 export function resolveRoute(pathname: string): AppRoute {
   if (pathname.startsWith("/login")) return "login";
+  if (pathname.startsWith("/admin/reconciliation")) return "admin-reconciliation";
   if (pathname.startsWith("/admin/billing")) return "admin-billing";
   if (pathname.startsWith("/admin/users")) return "admin-users";
   if (pathname.startsWith("/admin/wallets")) return "admin-wallets";

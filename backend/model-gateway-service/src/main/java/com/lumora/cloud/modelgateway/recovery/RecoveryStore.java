@@ -11,6 +11,9 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,6 +21,9 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class RecoveryStore {
+
+    private static final Logger log = LoggerFactory.getLogger(RecoveryStore.class);
+    private final DurableRecoveryJournal journal;
 
     private static final String COMMAND_PREFIX = "lumora:model-gateway:recovery:command:";
     private static final String DUE_INDEX = "lumora:model-gateway:recovery:due";
@@ -27,6 +33,7 @@ public class RecoveryStore {
             return 1
             """, Long.class);
     private static final DefaultRedisScript<Long> COMPLETE_SCRIPT = new DefaultRedisScript<>("""
+            if redis.call('GET', KEYS[1]) ~= ARGV[2] then return 0 end
             redis.call('DEL', KEYS[1])
             redis.call('ZREM', KEYS[2], ARGV[1])
             return 1
@@ -44,7 +51,29 @@ public class RecoveryStore {
     private final ObjectMapper objectMapper;
     private final ModelGatewayProperties properties;
 
+    public Mono<Void> verifyDurableStorage() {
+        return Mono.fromRunnable(() -> {
+            try { journal.checkWritable(); }
+            catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+        }).subscribeOn(Schedulers.boundedElastic()).then();
+    }
+
     public Mono<Void> schedule(RecoveryCommand command, Instant dueAt) {
+        return persist(command, dueAt).then(Mono.defer(() -> scheduleRedis(command, dueAt))
+                .onErrorResume(error -> {
+                    log.warn("Redis recovery index unavailable; durable journal retained request {}", command.requestId());
+                    return Mono.empty();
+                }));
+    }
+
+    private Mono<Void> persist(RecoveryCommand command, Instant dueAt) {
+        return Mono.fromRunnable(() -> {
+            try { journal.schedule(command, dueAt); }
+            catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+        }).subscribeOn(Schedulers.boundedElastic()).then();
+    }
+
+    private Mono<Void> scheduleRedis(RecoveryCommand command, Instant dueAt) {
         try {
             String json = objectMapper.writeValueAsString(command);
             return redis.execute(SCHEDULE_SCRIPT, List.of(key(command.requestId()), DUE_INDEX),
@@ -59,13 +88,48 @@ public class RecoveryStore {
         }
     }
 
-    public Mono<Void> complete(String requestId) {
-        return redis.execute(COMPLETE_SCRIPT, List.of(key(requestId), DUE_INDEX), requestId)
-                .next()
-                .then();
+    public Mono<Void> complete(RecoveryCommand command) {
+        return Mono.fromCallable(() -> mapperJson(command))
+                .flatMap(json -> redis.execute(COMPLETE_SCRIPT, List.of(key(command.requestId()), DUE_INDEX),
+                                command.requestId(), json).then()
+                        .onErrorResume(error -> {
+                            log.warn("Recovery Redis cleanup deferred for request {}", command.requestId());
+                            return Mono.empty();
+                        }))
+                .then(Mono.fromRunnable(() -> {
+                    try { journal.complete(command); }
+                    catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+                }).subscribeOn(Schedulers.boundedElastic()).then());
+    }
+
+    public Mono<Void> park(RecoveryCommand command, String reason) {
+        return Mono.fromRunnable(() -> {
+            try { journal.park(command, reason); }
+            catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+        }).subscribeOn(Schedulers.boundedElastic()).then();
+    }
+
+    private String mapperJson(RecoveryCommand command) throws JsonProcessingException {
+        return objectMapper.writeValueAsString(command);
     }
 
     public Flux<RecoveryCommand> due(Instant now) {
+        long claimMillis = Math.max(30_000L, properties.recovery().scanInterval().toMillis() * 3L);
+        Flux<RecoveryCommand> durable = Mono.fromCallable(() -> journal.claimDue(now,
+                        now.plusMillis(claimMillis), properties.recovery().batchSize()))
+                .subscribeOn(Schedulers.boundedElastic()).flatMapMany(Flux::fromIterable);
+        // Import legacy Redis-only records before executing them; Redis loss cannot remove new evidence.
+        return durable.mergeWith(Flux.defer(() -> dueRedis(now))
+                        .filter(command -> !journal.contains(command.requestId()))
+                        .flatMap(command -> persist(command, now.plusMillis(claimMillis)).thenReturn(command))
+                        .onErrorResume(error -> {
+                            log.warn("Redis recovery scan unavailable; scanning durable journal");
+                            return Flux.empty();
+                        }))
+                .distinct(RecoveryCommand::requestId);
+    }
+
+    private Flux<RecoveryCommand> dueRedis(Instant now) {
         return redis.opsForZSet()
                 .rangeByScore(
                         DUE_INDEX,
@@ -89,14 +153,15 @@ public class RecoveryStore {
 
     private Mono<RecoveryCommand> load(String requestId) {
         return redis.opsForValue().get(key(requestId))
+                .switchIfEmpty(redis.opsForZSet().remove(DUE_INDEX, requestId).then(Mono.empty()))
                 .flatMap(json -> {
                     try {
                         return Mono.just(objectMapper.readValue(json, RecoveryCommand.class));
                     } catch (JsonProcessingException exception) {
-                        return complete(requestId).then(Mono.empty());
+                        log.error("Unreadable Redis recovery evidence for request {}; preserved for inspection", requestId);
+                        return Mono.empty();
                     }
-                })
-                .switchIfEmpty(complete(requestId).then(Mono.empty()));
+                });
     }
 
     private String key(String requestId) {

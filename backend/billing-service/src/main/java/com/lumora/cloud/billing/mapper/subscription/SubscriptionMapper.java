@@ -11,6 +11,14 @@ public interface SubscriptionMapper extends BaseMapper<SubscriptionEntity> {
 
     @Select("""
             SELECT * FROM billing_subscription
+            WHERE user_id = #{userId} AND status = 'ACTIVE' AND starts_at > #{now}
+            ORDER BY starts_at, id
+            """)
+    java.util.List<SubscriptionEntity> findScheduled(@Param("userId") Long userId, @Param("now") Instant now);
+
+
+    @Select("""
+            SELECT * FROM billing_subscription
             WHERE user_id = #{userId}
               AND status = 'ACTIVE'
               AND starts_at < #{endsAt}

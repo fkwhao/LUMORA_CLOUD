@@ -39,6 +39,7 @@ const adminNavigation = [
   { key: "users", label: "用户与角色", href: "/admin/users", icon: Users },
   { key: "wallets", label: "用户钱包", href: "/admin/wallets", icon: Landmark },
   { key: "billing", label: "套餐与计费", href: "/admin/billing", icon: WalletCards },
+  { key: "reconciliation", label: "结算对账", href: "/admin/reconciliation", icon: ReceiptText },
   { key: "models", label: "模型目录", href: "/admin/models", icon: Boxes },
   { key: "providers", label: "模型供应商", href: "/admin/providers", icon: ServerCog },
   { key: "gateway", label: "网关诊断", href: "/admin/gateway", icon: ServerCog },

@@ -53,7 +53,7 @@ public class PurchaseOrderServiceImpl implements IPurchaseOrderService {
         CreatePurchaseOrderRequest request
     ) {
         String normalizedKey = idempotencyKey.trim();
-        PlanResponse plan = catalogService.publishedVersion(request.planVersionId());
+        PlanResponse plan = catalogService.purchasableVersion(request.planVersionId());
         Instant now = Instant.now();
         PurchaseOrderEntity pending = PurchaseOrderEntity.pending(
                 UUID.randomUUID().toString(), orderNumber(now), userId, plan.planVersionId(),
@@ -91,6 +91,7 @@ public class PurchaseOrderServiceImpl implements IPurchaseOrderService {
             return response(orderMapper.selectById(order.getId()));
         }
 
+        catalogService.purchasableVersion(order.getPlanVersionId());
         paymentMapper.insert(PaymentAttemptEntity.mockSuccess(
                 UUID.randomUUID().toString(), order.getId(), "mock:" + order.getOrderNo(),
                 order.getAmountMinor(), order.getCurrency(), now
@@ -116,6 +117,7 @@ public class PurchaseOrderServiceImpl implements IPurchaseOrderService {
             return response(orderMapper.selectById(order.getId()));
         }
 
+        catalogService.purchasableVersion(order.getPlanVersionId());
         walletService.debitPurchase(userId, order.getCurrency(), order.getAmountMinor(), order.getOrderNo());
         paymentMapper.insert(PaymentAttemptEntity.walletSuccess(
                 UUID.randomUUID().toString(), order.getId(), "wallet:" + order.getOrderNo(),
@@ -212,7 +214,8 @@ public class PurchaseOrderServiceImpl implements IPurchaseOrderService {
                 order.getOrderNo(), order.getUserId(), order.getPlanVersionId(),
                 order.getPlanCode(), order.getPlanName(), order.getAmountMinor(), order.getCurrency(),
                 order.getStatus(), order.getPaymentProvider(), order.getExpiresAt(), order.getPaidAt(), order.getFulfilledAt(),
-                order.getSubscriptionId(), properties.mockEnabled(), order.getCreatedAt(), order.getUpdatedAt()
+                order.getSubscriptionId(), properties.mockEnabled(), order.getCreatedAt(), order.getUpdatedAt(),
+                order.getSubscriptionId() == null ? null : subscriptionService.forUser(order.getUserId(), order.getSubscriptionId())
         );
     }
 

@@ -49,7 +49,51 @@ public class QuotaCalculator {
         long outputLimit = Math.min(model.capabilities().maxOutputTokens(), requestedMaxOutputTokens);
         BigDecimal estimated = charge(model.capabilities().contextWindow(), inputRate)
                 .add(charge(outputLimit, rates.outputPerMillion()));
-        return billable(estimated, rates.minimumRequestQuota(), snapshot.quotaMultiplier());
+        BigDecimal maximum = billable(estimated, rates.minimumRequestQuota(), snapshot.quotaMultiplier());
+        if (maximum.signum() == 0) throw new IllegalStateException("Published model requires a positive reservation");
+        return maximum;
+    }
+
+    public BigDecimal maximum(ResolvedModelConfig model,
+            com.lumora.cloud.modelgateway.domain.model.ValidatedChatRequest request, PricingSnapshot snapshot) {
+        var body = request.originalBody();
+        long input = estimatedInputTokens(model, body);
+        QuotaRates rates = model.quotaRates();
+        BigDecimal inputRate = max(rates.uncachedInputPerMillion(), rates.cachedInputPerMillion(),
+                rates.cacheCreationInputPerMillion());
+        long output = Math.min(model.capabilities().maxOutputTokens(), request.requestedMaxOutputTokens());
+        BigDecimal quota = billable(charge(input, inputRate).add(charge(output, rates.outputPerMillion())),
+                rates.minimumRequestQuota(), snapshot.quotaMultiplier());
+        // Positive reservation permits models whose selected request can ultimately cost zero.
+        return quota.max(new BigDecimal("0.000001"));
+    }
+
+    public long estimatedInputTokens(ResolvedModelConfig model, com.fasterxml.jackson.databind.JsonNode body) {
+        if (hasUnboundedInput(body)) return model.capabilities().contextWindow();
+        // UTF-8 bytes conservatively cover text, tool schemas, history and formatting overhead.
+        // This is a request estimate, not authoritative usage; billing always uses supplier usage.
+        long bytes = body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        long messages = Math.max(body.path("messages").size(), body.path("input").size());
+        long estimate = bytes + (bytes + 3) / 4 + 256 + messages * 16;
+        return Math.min(model.capabilities().contextWindow(), Math.max(1, estimate));
+    }
+
+    private boolean hasUnboundedInput(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node == null || !node.isContainerNode()) return false;
+        if (node.isObject()) {
+            if (node.path("features").path("webSearch").asBoolean(false)) return true;
+            for (String key : java.util.List.of("previous_response_id", "conversation", "file_id", "file_url",
+                    "image_url", "input_audio", "attachments")) {
+                if (node.hasNonNull(key) && (!node.path(key).isContainerNode() || !node.path(key).isEmpty())) return true;
+            }
+            String type = node.path("type").asText("");
+            if (type.startsWith("web_search") || type.startsWith("computer_") || type.startsWith("code_interpreter")) return true;
+            if (java.util.Set.of("image", "input_image", "image_url", "document", "file", "input_file",
+                    "input_audio", "audio", "video", "input_video", "web_search", "web_search_preview",
+                    "file_search", "computer_use_preview", "mcp").contains(type)) return true;
+        }
+        for (var child : node) if (hasUnboundedInput(child)) return true;
+        return false;
     }
 
     public BigDecimal actual(ResolvedModelConfig model, TokenUsage usage, PricingSnapshot snapshot) {
@@ -68,8 +112,8 @@ public class QuotaCalculator {
 
     private BigDecimal billable(BigDecimal calculated, BigDecimal minimum, BigDecimal multiplier) {
         BigDecimal result = calculated.max(minimum).multiply(positive(multiplier));
-        if (result.signum() <= 0) {
-            throw new IllegalStateException("Published model quota rates must produce a positive charge");
+        if (result.signum() < 0) {
+            throw new IllegalStateException("Published model quota rates cannot produce a negative charge");
         }
         return result.setScale(SCALE, RoundingMode.CEILING);
     }

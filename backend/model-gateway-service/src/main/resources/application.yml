@@ -20,5 +20,10 @@ management:
         include: health,info,sentinel
 
 lumora:
+  model-gateway:
+    recovery:
+      journal-directory: ${LUMORA_RECOVERY_JOURNAL_DIR:./data/billing-recovery}
+      journal-max-entries: ${LUMORA_RECOVERY_JOURNAL_MAX_ENTRIES:100000}
+      max-attempts: ${LUMORA_RECOVERY_MAX_ATTEMPTS:1000}
   security:
     internal-token: ${LUMORA_INTERNAL_TOKEN}

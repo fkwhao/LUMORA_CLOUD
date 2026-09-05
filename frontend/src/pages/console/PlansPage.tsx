@@ -139,7 +139,7 @@ export function PlansPage() {
         </section>
       )}
 
-      <p className="text-center text-xs text-muted">下单时锁定当前套餐版本和金额；续费订阅会自动排在现有有效期之后。</p>
+      <p className="text-center text-xs text-muted">下单时锁定套餐版本和金额。续费或购买不同套餐都会接续当前及待生效套餐，生效时间可在订单和套餐概览查看。</p>
     </div>
   );
 }

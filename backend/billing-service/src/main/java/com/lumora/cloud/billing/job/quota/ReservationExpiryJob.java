@@ -1,6 +1,5 @@
 package com.lumora.cloud.billing.job.quota;
 
-import com.lumora.cloud.api.billing.BillingContracts.ReleaseRequest;
 import com.lumora.cloud.billing.error.ApiException;
 import com.lumora.cloud.billing.mapper.quota.ReservationMapper;
 import com.lumora.cloud.billing.service.ISettlementService;
@@ -24,7 +23,6 @@ import java.util.List;
 public class ReservationExpiryJob {
 
     private static final Logger log = LoggerFactory.getLogger(ReservationExpiryJob.class);
-    private static final ReleaseRequest EXPIRED = new ReleaseRequest("预占超时，系统自动释放");
 
     private final ReservationMapper reservationMapper;
     private final ISettlementService settlementService;
@@ -48,7 +46,7 @@ public class ReservationExpiryJob {
         List<String> requestIds = reservationMapper.findExpiredActiveRequestIds(Instant.now(), batchSize);
         for (String requestId : requestIds) {
             try {
-                settlementService.release(requestId, EXPIRED);
+                settlementService.expire(requestId);
             } catch (ApiException exception) {
                 log.debug("Expired reservation {} changed before release: {}", requestId, exception.getCode());
             } catch (RuntimeException exception) {

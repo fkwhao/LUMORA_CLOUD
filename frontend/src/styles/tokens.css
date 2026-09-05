@@ -6,6 +6,8 @@
 @import "@heroui/styles/themes/shared/theme.css" layer(theme);
 @import "@heroui/styles/themes/default/index.css" layer(theme);
 @import "@heroui/styles/utilities";
+@import "@heroui/styles/components/accordion.css" layer(components);
+@import "@heroui/styles/components/alert.css" layer(components);
 @import "@heroui/styles/components/avatar.css" layer(components);
 @import "@heroui/styles/components/button.css" layer(components);
 @import "@heroui/styles/components/card.css" layer(components);

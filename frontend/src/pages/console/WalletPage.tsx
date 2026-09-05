@@ -1,6 +1,6 @@
 import { Button, Card, Chip, Input, Label, ListBox, Select, TextField } from "@heroui/react";
 import { ArrowDownLeft, ArrowUpRight, CreditCard, Landmark, Plus, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiClientError } from "../../api/auth";
 import {
@@ -8,6 +8,8 @@ import {
   completeMockTopup,
   createWalletTopup,
   getWalletOverview,
+  getPaymentCapabilities,
+  type PaymentCapabilities,
   type WalletOverview,
   type WalletTopupOrder,
 } from "../../api/billing";
@@ -17,28 +19,51 @@ export function WalletPage() {
   const [loading, setLoading] = useState(true);
   const [pendingOrder, setPendingOrder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<PaymentCapabilities | null>(null);
+  const creating = useRef(false);
+  const operationKeys = useRef(new Map<string, string>());
+  const mockAvailable = capabilities?.availableMethods.includes("MOCK") ?? false;
 
   async function load() {
     setLoading(true); setError(null);
-    try { setWallet(await getWalletOverview()); }
+    try {
+      const [overview, methods] = await Promise.all([getWalletOverview(), getPaymentCapabilities()]);
+      setWallet(overview);
+      setCapabilities(methods);
+    }
     catch (reason) { setError(message(reason)); }
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(null);
-    const form = new FormData(event.currentTarget);
+    event.preventDefault();
+    if (creating.current || !mockAvailable) return;
+    setError(null); setNotice(null);
+    const element = event.currentTarget;
+    const form = new FormData(element);
     const amount = Number(form.get("amount"));
     const currency = String(form.get("currency") || "CNY");
     if (!Number.isFinite(amount) || amount <= 0) { setError("请输入大于 0 的充值金额"); return; }
+    const amountMinor = Math.round(amount * 100);
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) { setError("充值金额超出有效范围"); return; }
+    const signature = JSON.stringify({ amountMinor, currency });
+    const key = operationKeys.current.get(signature) ?? crypto.randomUUID();
+    operationKeys.current.set(signature, key);
+    creating.current = true;
     setPendingOrder("create");
     try {
-      await createWalletTopup(Math.round(amount * 100), currency, crypto.randomUUID());
-      event.currentTarget.reset();
+      const created = await createWalletTopup(amountMinor, currency, key);
+      operationKeys.current.delete(signature);
+      element.reset();
+      setNotice(`充值订单 ${created.orderNo} 已创建`);
       await load();
-    } catch (reason) { setError(message(reason)); }
-    finally { setPendingOrder(null); }
+    } catch (reason) {
+      if (reason instanceof ApiClientError && reason.status >= 400 && reason.status < 500
+          && reason.status !== 408 && reason.status !== 429) operationKeys.current.delete(signature);
+      setError(message(reason));
+    } finally { creating.current = false; setPendingOrder(null); }
   }
 
   async function update(order: WalletTopupOrder, action: "pay" | "cancel") {
@@ -54,6 +79,7 @@ export function WalletPage() {
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="mb-1 text-sm text-muted">余额与充值</p><h1 className="text-2xl font-semibold tracking-tight">钱包管理</h1><p className="mt-2 text-sm text-muted">余额以不可变流水和数据库事务为准，可用于支付同币种套餐订单。</p></div><Button isDisabled={loading} onPress={() => void load()} variant="secondary"><RefreshCw size={16} />刷新</Button></header>
+      {notice && <div className="rounded-xl bg-success-soft px-4 py-3 text-sm text-success">{notice}</div>}
       {error && <div className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">{error}</div>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -62,12 +88,12 @@ export function WalletPage() {
 
       <section className="grid items-start gap-6 xl:grid-cols-[minmax(320px,.7fr)_minmax(0,1.3fr)]">
         <Card variant="default">
-          <Card.Header><Plus className="text-muted" size={19} /><div><Card.Title>MOCK 充值</Card.Title><Card.Description>开发环境模拟到账，不产生真实扣款</Card.Description></div></Card.Header>
+          <Card.Header><Plus className="text-muted" size={19} /><div><Card.Title>钱包充值</Card.Title><Card.Description>{mockAvailable ? "开发环境模拟到账，不产生真实扣款" : "当前环境暂未开放充值渠道"}</Card.Description></div></Card.Header>
           <Card.Content>
             <form className="space-y-4" onSubmit={(event) => void create(event)}>
               <TextField fullWidth isRequired name="amount"><Label>充值金额</Label><Input fullWidth min="0.01" placeholder="例如 100.00" step="0.01" type="number" /></TextField>
               <Select defaultSelectedKey="CNY" fullWidth isRequired name="currency" variant="secondary"><Label>币种</Label><Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger><Select.Popover><ListBox><ListBox.Item id="CNY">CNY</ListBox.Item><ListBox.Item id="USD">USD</ListBox.Item></ListBox></Select.Popover></Select>
-              <Button fullWidth isDisabled={pendingOrder !== null} type="submit" variant="primary"><CreditCard size={16} />{pendingOrder === "create" ? "正在创建…" : "创建充值订单"}</Button>
+              <Button fullWidth isDisabled={pendingOrder !== null || !mockAvailable} type="submit" variant="primary"><CreditCard size={16} />{pendingOrder === "create" ? "正在创建…" : "创建充值订单"}</Button>
             </form>
           </Card.Content>
         </Card>
@@ -79,7 +105,7 @@ export function WalletPage() {
               <div className="grid gap-3 border-b border-separator py-4 last:border-0 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center" key={order.orderNo}>
                 <div><p className="text-sm font-medium">{money(order.amountMinor, order.currency)}</p><p className="text-xs text-muted">{order.orderNo} · {formatDate(order.createdAt)}</p></div>
                 <TopupStatus status={order.status} />
-                {order.status === "PENDING_PAYMENT" ? <div className="flex gap-2"><Button isDisabled={pendingOrder !== null} onPress={() => void update(order, "cancel")} size="sm" variant="tertiary">取消</Button><Button isDisabled={pendingOrder !== null} onPress={() => void update(order, "pay")} size="sm" variant="primary">模拟支付</Button></div> : <span className="text-xs text-muted">{order.paidAt ? formatDate(order.paidAt) : "—"}</span>}
+                {order.status === "PENDING_PAYMENT" ? <div className="flex gap-2"><Button isDisabled={pendingOrder !== null} onPress={() => void update(order, "cancel")} size="sm" variant="tertiary">取消</Button>{mockAvailable && order.mockPaymentEnabled && <Button isDisabled={pendingOrder !== null} onPress={() => void update(order, "pay")} size="sm" variant="primary">模拟支付</Button>}</div> : <span className="text-xs text-muted">{order.paidAt ? formatDate(order.paidAt) : "—"}</span>}
               </div>
             ))}
           </Card.Content>

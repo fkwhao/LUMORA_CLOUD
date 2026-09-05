@@ -83,13 +83,24 @@ public class SubscriptionServiceImpl implements ISubscriptionService {
     @Transactional
     public BillingOverviewResponse overview(Long userId) {
         Instant now = Instant.now();
+        var scheduled = subscriptionMapper.findScheduled(userId, now).stream()
+                .map(row -> new com.lumora.cloud.billing.domain.vo.subscription.ScheduledSubscriptionResponse(
+                        response(row), catalogService.publishedVersion(row.getPlanVersionId())))
+                .toList();
         SubscriptionEntity subscription = subscriptionMapper.findActiveForUpdate(userId, now);
         if (subscription == null) {
-            return new BillingOverviewResponse(false, null, null, null);
+            return new BillingOverviewResponse(false, null, null, null, scheduled);
         }
         PlanResponse plan = catalogService.publishedVersion(subscription.getPlanVersionId());
         QuotaBucketEntity bucket = bucketService.currentForUpdate(subscription, now);
-        return new BillingOverviewResponse(true, plan, response(subscription), quota(bucket));
+        return new BillingOverviewResponse(true, plan, response(subscription), quota(bucket), scheduled);
+    }
+
+    @Transactional(readOnly = true)
+    public SubscriptionResponse forUser(Long userId, String subscriptionId) {
+        if (subscriptionId == null) return null;
+        SubscriptionEntity row = subscriptionMapper.selectById(subscriptionId);
+        return row != null && row.getUserId().equals(userId) ? response(row) : null;
     }
 
     @Transactional(readOnly = true)

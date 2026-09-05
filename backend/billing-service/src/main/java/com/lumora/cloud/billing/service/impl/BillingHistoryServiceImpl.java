@@ -99,13 +99,9 @@ public class BillingHistoryServiceImpl implements IBillingHistoryService {
                 bucket.getStartsAt(),
                 bucket.getEndsAt(),
                 quotaSummary(bucket, ledgerMapper.countByBucket(bucket.getId())),
-                usageSummary(usageMapper.aggregateUserBetween(
-                        userId, bucket.getStartsAt(), bucket.getEndsAt()
-                )),
+                usageSummary(usageMapper.aggregateUserByBucket(userId, bucket.getId())),
                 ledgerMapper.findRecentByBucket(bucket.getId(), DETAIL_LIMIT),
-                usageMapper.findRecentByUserBetween(
-                        userId, bucket.getStartsAt(), bucket.getEndsAt(), DETAIL_LIMIT
-                )
+                usageMapper.findRecentByBucket(userId, bucket.getId(), DETAIL_LIMIT)
         );
     }
 

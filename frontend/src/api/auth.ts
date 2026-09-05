@@ -34,6 +34,25 @@ export class ApiClientError extends Error {
 }
 
 let accessToken: string | null = null;
+let sessionUserId: string | null = null;
+let authGeneration = 0;
+const invalidationListeners = new Set<() => void>();
+
+export function onSessionInvalidated(listener: () => void): () => void {
+  invalidationListeners.add(listener);
+  return () => { invalidationListeners.delete(listener); };
+}
+
+function sessionChanged(): ApiClientError {
+  return new ApiClientError(401, "SESSION_CHANGED", "登录身份已变化，请刷新页面确认账号后重新操作");
+}
+
+function invalidateSession(): void {
+  accessToken = null;
+  sessionUserId = null;
+  authGeneration += 1;
+  for (const listener of invalidationListeners) listener();
+}
 let refreshRequest: Promise<AuthResponse> | null = null;
 
 function deviceId(): string {
@@ -62,7 +81,8 @@ async function readError(response: Response): Promise<ApiClientError> {
   );
 }
 
-async function authRequest(path: string, init?: RequestInit): Promise<AuthResponse> {
+async function authRequest(path: string, init?: RequestInit, expectedUserId?: string | null): Promise<AuthResponse> {
+  const generation = authGeneration;
   const response = await fetch(path, {
     ...init,
     credentials: "include",
@@ -75,11 +95,20 @@ async function authRequest(path: string, init?: RequestInit): Promise<AuthRespon
   if (!response.ok) throw await readError(response);
 
   const auth = (await response.json()) as AuthResponse;
+  if (generation !== authGeneration) throw sessionChanged();
+  if (expectedUserId && auth.user.id !== expectedUserId) {
+    invalidateSession();
+    throw sessionChanged();
+  }
   accessToken = auth.accessToken;
+  sessionUserId = auth.user.id;
   return auth;
 }
 
 export async function login(email: string, password: string): Promise<UserProfile> {
+  authGeneration += 1;
+  accessToken = null;
+  sessionUserId = null;
   const auth = await authRequest("/api/app/auth/login", {
     method: "POST",
     body: JSON.stringify({
@@ -95,10 +124,11 @@ export async function login(email: string, password: string): Promise<UserProfil
 
 async function refresh(): Promise<AuthResponse> {
   if (!refreshRequest) {
+    const expectedUserId = sessionUserId;
     const rotate = () => authRequest("/api/app/auth/refresh", {
       method: "POST",
       body: "{}",
-    });
+    }, expectedUserId);
     // Refresh cookies are shared by browser tabs. Serialize rotation so two tabs
     // cannot reuse the same one-time token and revoke the whole session.
     refreshRequest = (navigator.locks
@@ -116,6 +146,7 @@ export async function restoreSession(): Promise<UserProfile | null> {
     return (await refresh()).user;
   } catch (error) {
     accessToken = null;
+    sessionUserId = null;
     if (error instanceof ApiClientError && (error.status === 400 || error.status === 401)) {
       return null;
     }
@@ -132,11 +163,13 @@ export async function logout(): Promise<void> {
       body: "{}",
     });
   } finally {
-    accessToken = null;
+    invalidateSession();
   }
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
+  const requestUserId = sessionUserId;
+  if (!requestUserId) throw new ApiClientError(401, "AUTHENTICATION_REQUIRED", "请先登录");
   const response = await fetch(path, {
     ...init,
     credentials: "include",
@@ -146,13 +179,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit, retry = true
     },
   });
 
+  if (requestUserId !== sessionUserId) throw sessionChanged();
   if (response.status === 401 && retry) {
     try {
       await refresh();
-      return apiFetch<T>(path, init, false);
-    } catch {
-      accessToken = null;
+    } catch (error) {
+      if (requestUserId === sessionUserId) invalidateSession();
+      throw error;
     }
+    if (requestUserId !== sessionUserId) throw sessionChanged();
+    return apiFetch<T>(path, init, false);
   }
 
   if (!response.ok) throw await readError(response);

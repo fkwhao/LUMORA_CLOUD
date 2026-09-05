@@ -26,6 +26,11 @@ public class ReservationEntity {
     private BigDecimal settledQuota;
     private String status;
     private String failureReason;
+    private boolean holdReleased;
+    private int reconciliationAttempts;
+    private Instant reconciliationCheckedAt;
+    private Instant reconciliationNextAt;
+    private String reconciliationNote;
     private Instant expiresAt;
     private Instant settledAt;
     private Instant releasedAt;
@@ -78,6 +83,11 @@ public class ReservationEntity {
     public BigDecimal getSettledQuota() { return settledQuota; }
     public String getStatus() { return status; }
     public String getFailureReason() { return failureReason; }
+    public boolean isHoldReleased() { return holdReleased; }
+    public int getReconciliationAttempts() { return reconciliationAttempts; }
+    public Instant getReconciliationCheckedAt() { return reconciliationCheckedAt; }
+    public Instant getReconciliationNextAt() { return reconciliationNextAt; }
+    public String getReconciliationNote() { return reconciliationNote; }
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getSettledAt() { return settledAt; }
     public Instant getReleasedAt() { return releasedAt; }

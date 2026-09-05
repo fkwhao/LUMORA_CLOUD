@@ -48,6 +48,19 @@ public interface QuotaBucketMapper extends BaseMapper<QuotaBucketEntity> {
 
     @Update("""
             UPDATE quota_bucket
+            SET reserved_quota = reserved_quota - #{reservedAmount},
+                consumed_quota = consumed_quota + #{billedAmount}
+            WHERE id = #{bucketId} AND reserved_quota >= #{reservedAmount}
+              AND granted_quota - consumed_quota - reserved_quota + #{reservedAmount} >= #{billedAmount}
+            """)
+    int settleReconciled(
+            @Param("bucketId") String bucketId,
+            @Param("reservedAmount") BigDecimal reservedAmount,
+            @Param("billedAmount") BigDecimal billedAmount
+    );
+
+    @Update("""
+            UPDATE quota_bucket
             SET reserved_quota = reserved_quota - #{amount}
             WHERE id = #{bucketId} AND reserved_quota >= #{amount}
             """)

@@ -34,7 +34,13 @@ public interface UsageRecordMapper extends BaseMapper<UsageRecordEntity> {
     @Select("SELECT * FROM billing_usage_record WHERE reservation_id = #{reservationId} LIMIT 1 FOR UPDATE")
     UsageRecordEntity findByReservationIdForUpdate(@Param("reservationId") String reservationId);
 
-    @Update("UPDATE billing_usage_record SET status = 'COMPLETED' WHERE id = #{id} AND status = 'PROCESSING'")
+    @Select("SELECT * FROM billing_usage_record WHERE reservation_id = #{reservationId} LIMIT 1")
+    UsageRecordEntity findByReservationId(@Param("reservationId") String reservationId);
+
+    @Update("UPDATE billing_usage_record SET status = 'FAILED', billed_quota = 0 WHERE id = #{id} AND status = 'PENDING_RECONCILIATION'")
+    int markWaived(@Param("id") String id);
+
+    @Update("UPDATE billing_usage_record SET status = 'COMPLETED' WHERE id = #{id} AND status IN ('PROCESSING', 'PENDING_RECONCILIATION')")
     int markCompleted(@Param("id") String id);
 
     @Update("""
@@ -80,6 +86,36 @@ public interface UsageRecordMapper extends BaseMapper<UsageRecordEntity> {
             @Param("userId") Long userId,
             @Param("startsAt") Instant startsAt,
             @Param("endsAt") Instant endsAt
+    );
+
+    @Select("""
+            SELECT u.* FROM billing_usage_record u
+            JOIN billing_reservation r ON r.id = u.reservation_id
+            WHERE u.user_id = #{userId} AND r.quota_bucket_id = #{bucketId}
+            ORDER BY u.occurred_at DESC, u.id DESC LIMIT #{limit}
+            """)
+    List<UsageRecordEntity> findRecentByBucket(
+            @Param("userId") Long userId, @Param("bucketId") String bucketId,
+            @Param("limit") int limit
+    );
+
+    @Select("""
+            SELECT COUNT(*) AS request_count,
+                COALESCE(SUM(u.status = 'COMPLETED'), 0) AS completed_count,
+                COALESCE(SUM(u.status IN ('PROCESSING', 'PENDING_RECONCILIATION')), 0) AS pending_count,
+                COALESCE(SUM(u.status = 'FAILED'), 0) AS failed_count,
+                COALESCE(SUM(u.input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(u.output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(u.reasoning_tokens), 0) AS reasoning_tokens,
+                COALESCE(SUM(u.cache_read_tokens), 0) AS cache_read_tokens,
+                COALESCE(SUM(u.cache_write_tokens), 0) AS cache_write_tokens,
+                COALESCE(SUM(u.billed_quota), 0) AS billed_quota
+            FROM billing_usage_record u
+            JOIN billing_reservation r ON r.id = u.reservation_id
+            WHERE u.user_id = #{userId} AND r.quota_bucket_id = #{bucketId}
+            """)
+    UsageAggregate aggregateUserByBucket(
+            @Param("userId") Long userId, @Param("bucketId") String bucketId
     );
 
     @Select("""

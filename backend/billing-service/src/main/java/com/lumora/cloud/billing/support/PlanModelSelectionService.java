@@ -29,21 +29,23 @@ public class PlanModelSelectionService {
         if (normalized.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PLAN_MODELS_REQUIRED", "套餐至少需要包含一个模型");
         }
-        List<PublishedModelReference> published;
-        try {
-            published = catalogClient.publishedModelReferences();
-        } catch (RuntimeException error) {
-            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "MODEL_CATALOG_UNAVAILABLE",
-                    "暂时无法校验套餐模型，请稍后重试");
-        }
-        Set<String> available = published.stream().map(PublishedModelReference::modelCode).collect(
-                java.util.stream.Collectors.toSet()
-        );
+        Set<String> available = availableModelCodes();
         List<String> unavailable = normalized.stream().filter(code -> !available.contains(code)).toList();
         if (!unavailable.isEmpty()) {
             throw new ApiException(HttpStatus.CONFLICT, "PLAN_MODEL_NOT_PUBLISHED",
                     "套餐包含未发布或已停用的模型：" + String.join("、", unavailable));
         }
         return List.copyOf(normalized);
+    }
+
+    public Set<String> availableModelCodes() {
+        try {
+            return catalogClient.publishedModelReferences().stream()
+                    .map(PublishedModelReference::modelCode)
+                    .collect(java.util.stream.Collectors.toSet());
+        } catch (RuntimeException error) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "MODEL_CATALOG_UNAVAILABLE",
+                    "暂时无法校验套餐模型，请稍后重试");
+        }
     }
 }

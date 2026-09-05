@@ -6,6 +6,7 @@ import com.lumora.cloud.billing.domain.projection.history.UsageAggregate;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -39,6 +40,19 @@ public interface UsageDailySummaryMapper {
     int addUsage(
             @Param("usage") UsageRecordEntity usage,
             @Param("status") String status,
+            @Param("summaryDate") LocalDate summaryDate
+    );
+
+    @Update("""
+            UPDATE billing_usage_daily_summary
+            SET pending_count = pending_count - 1,
+                completed_count = completed_count + CASE WHEN #{status} = 'COMPLETED' THEN 1 ELSE 0 END,
+                failed_count = failed_count + CASE WHEN #{status} = 'FAILED' THEN 1 ELSE 0 END,
+                billed_quota = billed_quota - CASE WHEN #{status} = 'FAILED' THEN #{usage.billedQuota} ELSE 0 END
+            WHERE user_id = #{usage.userId} AND summary_date = #{summaryDate} AND pending_count > 0
+            """)
+    int resolvePending(
+            @Param("usage") UsageRecordEntity usage, @Param("status") String status,
             @Param("summaryDate") LocalDate summaryDate
     );
 

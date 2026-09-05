@@ -16,6 +16,8 @@ public interface ISubscriptionService {
 
     List<SubscriptionResponse> listRecent(Long userId);
 
+    SubscriptionResponse forUser(Long userId, String subscriptionId);
+
     SubscriptionResponse purchase(Long userId, Long planVersionId, String orderNo, Instant now);
 
     SubscriptionEntity activeForUpdate(Long userId, Instant now);

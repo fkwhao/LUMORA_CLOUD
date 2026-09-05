@@ -36,14 +36,31 @@ export function GatewayDiagnosticsPage() {
       <Card variant="default">
         <Card.Header><div><Card.Title>最近完成请求</Card.Title><Card.Description>{summary ? `最多显示最近 100 条 · 运行中请求仅计入上方统计 · 24 小时 P95（近似）${duration(summary.p95DurationMillis)}` : "等待数据"}</Card.Description></div></Card.Header>
         <Card.Content className="gap-0 pt-1">
-          {loading ? <p className="py-12 text-center text-sm text-muted">正在读取诊断数据…</p> : !data?.records.length ? <p className="py-12 text-center text-sm text-muted">暂无模型请求记录</p> : data.records.map((record) => (
-            <div className="grid gap-3 border-b border-separator py-4 last:border-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.8fr)_minmax(0,.8fr)_auto] lg:items-center" key={record.traceId}>
-              <div className="min-w-0"><p className="truncate text-sm font-medium">{record.modelCode || "未解析模型"}</p><p className="truncate text-xs text-muted">{record.traceId}</p></div>
-              <div><p className="text-sm">{record.providerCode || "供应商解析未完成"}</p><p className="truncate text-xs text-muted" title={record.routeId}>{record.routeName || "路由解析未完成"} · 用户 #{record.userId} · {record.protocol}</p></div>
-              <div><p className="text-sm tabular-nums">{record.completedAt ? duration(record.durationMillis) : "进行中"}</p><p className="text-xs text-muted">{formatDate(record.startedAt)}{record.upstreamStatus ? ` · HTTP ${record.upstreamStatus}` : ""}</p></div>
-              <div className="lg:text-right"><Status status={record.status} /><p className="mt-1 text-xs text-danger">{record.errorCode}</p></div>
-            </div>
-          ))}
+          {loading ? <p className="py-12 text-center text-sm text-muted">正在读取诊断数据…</p> : !data?.records.length ? <p className="py-12 text-center text-sm text-muted">暂无模型请求记录</p> : data.records.map((record) => {
+            const routeDetails = `${record.routeName || "路由解析未完成"} · 用户 #${record.userId} · ${record.protocol}`;
+            const timeDetails = `${formatDate(record.startedAt)}${record.upstreamStatus ? ` · HTTP ${record.upstreamStatus}` : ""}`;
+
+            return (
+              <div className="grid items-start gap-3 border-b border-separator py-4 last:border-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,.8fr)_minmax(0,.8fr)_10rem]" key={record.traceId}>
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-sm font-medium leading-5" title={record.modelCode}>{record.modelCode || "未解析模型"}</p>
+                  <p className="truncate text-xs leading-4 text-muted" title={record.traceId}>{record.traceId}</p>
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-sm leading-5" title={record.providerCode}>{record.providerCode || "供应商解析未完成"}</p>
+                  <p className="truncate text-xs leading-4 text-muted" title={record.routeId ? `${routeDetails} · ${record.routeId}` : routeDetails}>{routeDetails}</p>
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm leading-5 tabular-nums">{record.completedAt ? duration(record.durationMillis) : "进行中"}</p>
+                  <p className="truncate text-xs leading-4 text-muted" title={timeDetails}>{timeDetails}</p>
+                </div>
+                <div className="flex min-w-0 flex-col items-start gap-1 xl:items-end xl:text-right">
+                  <div className="flex h-5 items-center"><Status status={record.status} /></div>
+                  {record.errorCode && <p className="max-w-full text-xs leading-4 text-danger [overflow-wrap:anywhere]">{record.errorCode}</p>}
+                </div>
+              </div>
+            );
+          })}
         </Card.Content>
       </Card>
     </div>

@@ -10,6 +10,10 @@ import java.util.List;
 
 public interface QuotaLedgerMapper extends BaseMapper<QuotaLedgerEntity> {
 
+    @Select("SELECT * FROM quota_ledger WHERE reservation_id = #{reservationId} ORDER BY created_at, id")
+    List<QuotaLedgerEntity> findByReservation(@Param("reservationId") String reservationId);
+
+
     @Select("""
             SELECT * FROM quota_ledger
             WHERE user_id = #{userId}

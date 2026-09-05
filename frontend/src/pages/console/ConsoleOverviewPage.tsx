@@ -109,6 +109,20 @@ export function ConsoleOverviewPage() {
         <Card variant="default"><Card.Content className="py-10 text-center text-sm text-muted">当前无法确认套餐状态，请稍后刷新。</Card.Content></Card>
       )}
 
+      {!!overview?.scheduledSubscriptions?.length && (
+        <Card variant="default">
+          <Card.Header><div><Card.Title>待生效的套餐</Card.Title><Card.Description>权益已到账，将按以下顺序自动生效；购买不同套餐也会接续现有排期。</Card.Description></div></Card.Header>
+          <Card.Content className="gap-0 pt-1">
+            {overview.scheduledSubscriptions.map(({ subscription, plan }) => (
+              <div className="grid items-start gap-3 border-b border-separator py-4 last:border-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" key={subscription.subscriptionId}>
+                <div className="min-w-0"><p className="flex flex-wrap items-center gap-2 font-medium">{plan.name}<Chip size="sm" color="warning" variant="soft">待生效</Chip></p><p className="mt-1 text-xs text-muted">每周 {formatQuota(plan.weeklyQuota)} 额度</p></div>
+                <div className="min-w-0 text-sm"><p>{formatDateTime(subscription.startsAt)} 至 {formatDateTime(subscription.endsAt)}</p>{subscription.source === "PURCHASE" && subscription.sourceReference && <a className="mt-1 block break-all text-xs text-accent underline" href={`/console/orders/${encodeURIComponent(subscription.sourceReference)}`}>订单 {subscription.sourceReference}</a>}</div>
+              </div>
+            ))}
+          </Card.Content>
+        </Card>
+      )}
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
         <DailyUsage
           chart={chart}

@@ -16,6 +16,10 @@ public class QuotaLedgerWriter {
     private final QuotaLedgerMapper ledgerMapper;
     private final QuotaDailySummaryMapper dailySummaryMapper;
 
+    public java.util.List<QuotaLedgerEntity> history(String reservationId) {
+        return ledgerMapper.findByReservation(reservationId);
+    }
+
     public void append(QuotaLedgerEntity entry) {
         if (ledgerMapper.insert(entry) != 1) {
             throw new IllegalStateException("Quota ledger entry could not be appended");

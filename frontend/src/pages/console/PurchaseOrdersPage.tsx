@@ -194,6 +194,11 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
             {order.paidAt && <OrderField label="支付完成时间" value={formatDate(order.paidAt)} />}
             {order.paymentProvider && <OrderField label="支付方式" value={order.paymentProvider === "WALLET" ? "钱包余额" : "开发环境 MOCK"} />}
             {order.subscriptionId && <OrderField label="订阅编号" value={order.subscriptionId} />}
+            {order.subscription && <>
+              <OrderField label="权益开始时间" value={formatDate(order.subscription.startsAt)} />
+              <OrderField label="权益结束时间" value={formatDate(order.subscription.endsAt)} />
+              <OrderField label="权益状态" value={order.subscription.status === "CANCELED" ? "已取消" : new Date(order.subscription.endsAt).getTime() <= Date.now() ? "已到期" : new Date(order.subscription.startsAt).getTime() > Date.now() ? "待生效，权益已到账" : "生效中"} />
+            </>}
           </dl>
 
           {order.status === "PENDING_PAYMENT" && (
@@ -202,9 +207,9 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
                 <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
                   <div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 shrink-0" size={17} /><p><strong>开发环境测试支付</strong><br /><span className="text-xs">不会调用支付宝、微信或银行卡，也不会产生真实扣款。确认后会直接模拟支付成功并发放订阅。</span></p></div>
                 </div>
-              ) : (
+              ) : !walletAvailable ? (
                 <div className="rounded-xl bg-default px-4 py-3 text-sm text-muted">当前环境没有可用支付方式，订单仍会保留到截止时间。</div>
-              )}
+              ) : null}
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button isDisabled={pending !== null} onPress={() => void cancel()} variant="tertiary"><XCircle size={16} /> {pending === "cancel" ? "正在取消…" : "取消订单"}</Button>
                 {mockAvailable && <Button isDisabled={pending !== null} onPress={() => void pay("mock")} variant="secondary"><ShieldAlert size={16} /> {pending === "mock" ? "正在确认…" : "使用测试支付"}</Button>}
@@ -214,7 +219,7 @@ function OrderCheckout({ orderNo }: { orderNo: string }) {
           )}
 
           {order.status === "FULFILLED" && (
-            <Result icon={CheckCircle2} title="支付与订阅发放已完成" description="本次操作具备幂等保护，重复确认不会重复创建订阅。">
+            <Result icon={CheckCircle2} title="支付与订阅发放已完成" description={order.subscription && new Date(order.subscription.startsAt).getTime() > Date.now() ? `权益已到账，将于 ${formatDate(order.subscription.startsAt)} 自动生效。` : "权益详情和后续排期可在套餐概览查看。"}>
               <Button onPress={() => window.location.assign("/console")} variant="primary">查看套餐概览</Button>
             </Result>
           )}

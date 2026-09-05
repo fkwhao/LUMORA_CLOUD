@@ -13,6 +13,6 @@ public record RecoveryCommand(
         Instant createdAt
 ) {
     public RecoveryCommand nextAttempt() {
-        return new RecoveryCommand(operation, requestId, settlement, reason, attempts + 1, createdAt);
+        return new RecoveryCommand(operation, requestId, settlement, reason, attempts == Integer.MAX_VALUE ? attempts : attempts + 1, createdAt);
     }
 }

@@ -64,6 +64,12 @@ public class BillingCatalogServiceImpl implements IBillingCatalogService {
 
     @Transactional(readOnly = true)
     public List<PlanResponse> listPublished() {
+        java.util.Set<String> available = modelSelection.availableModelCodes();
+        return listAllPublished().stream().filter(plan -> hasAvailableModel(plan, available)).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PlanResponse> listAllPublished() {
         return planMapper.selectList(Wrappers.<BillingPlanEntity>lambdaQuery()
                         .eq(BillingPlanEntity::getStatus, PlanStatus.ACTIVE.name())
                         .orderByAsc(BillingPlanEntity::getId))
@@ -129,6 +135,21 @@ public class BillingCatalogServiceImpl implements IBillingCatalogService {
             throw new ApiException(HttpStatus.NOT_FOUND, "PLAN_NOT_AVAILABLE", "套餐当前不可用");
         }
         return response(plan, version);
+    }
+
+    @Transactional(readOnly = true)
+    public PlanResponse purchasableVersion(Long planVersionId) {
+        PlanResponse plan = publishedVersion(planVersionId);
+        if (!hasAvailableModel(plan, modelSelection.availableModelCodes())) {
+            throw new ApiException(HttpStatus.CONFLICT, "PLAN_HAS_NO_AVAILABLE_MODELS",
+                    "该套餐暂时没有可用模型，已暂停购买");
+        }
+        return plan;
+    }
+
+    private boolean hasAvailableModel(PlanResponse plan, java.util.Set<String> available) {
+        return "ALL_PUBLISHED_LEGACY".equals(plan.modelAccessMode())
+                ? !available.isEmpty() : plan.modelCodes().stream().anyMatch(available::contains);
     }
 
     PlanResponse response(BillingPlanEntity plan, PlanVersionEntity version) {

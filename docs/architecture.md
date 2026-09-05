@@ -96,6 +96,9 @@ Nacos/Redis 联合测试。管理端运营总览已通过各领域只读统计�
 模型资源数据。Billing 还已完成多币种钱包、MOCK 充值订单、管理员余额调整、不可变钱包流水及钱包套餐
 支付；充值与购买订单均由 RabbitMQ TTL/死信及时过期、MySQL 扫描兜底。Model Gateway 额外在 Redis
 保留有限期限的脱敏诊断记录，管理端可查看成功率、耗时和最近请求，不记录 Prompt、响应正文或密钥。
+2026-09-05 已新增持久化文件恢复日志、到期占用回收后的延迟补结算、自动及批量对账工作台、待生效权益展示，
+并调整普通文本的预占估算。恢复日志每实例独占，Billing V9 迁移由所属服务执行；实现与部署边界见
+[结算恢复与对账说明](billing-recovery-and-reconciliation.md)。
 Desktop 已接入可选登录、套餐只读查询、套餐模型同步以及独立的 `lumora-cloud` Agent 适配器；原有
 本地 BYOK 三协议链路不受影响。云端模型版本可声明供应商托管 Web Search 能力，Model Gateway 已完成
 Responses/Anthropic 上游工具注入以及搜索进度、来源引用事件归一化，Desktop 复用现有工作日志和引用

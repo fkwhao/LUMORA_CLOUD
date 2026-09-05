@@ -18,6 +18,7 @@ public record PurchaseOrderResponse(
         String subscriptionId,
         boolean mockPaymentEnabled,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        com.lumora.cloud.billing.domain.vo.subscription.SubscriptionResponse subscription
 ) {
 }

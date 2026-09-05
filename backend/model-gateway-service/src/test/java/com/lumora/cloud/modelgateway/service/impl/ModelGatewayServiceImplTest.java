@@ -86,6 +86,7 @@ class ModelGatewayServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(recovery.ensureAvailable()).thenReturn(Mono.empty());
         model = model();
         lease = new RequestLease("request-key", "token", "mgw-request");
         permit = new ConcurrencyPermit("user-key", "model-key", "permit");
@@ -111,6 +112,19 @@ class ModelGatewayServiceImplTest {
                 ReservationStatus.ACTIVE, amount("1"), null, amount("9"), Instant.now(), amount("1"), null,
                 Instant.now().plusSeconds(60), false
         )));
+    }
+
+    @Test
+    void unavailableRecoveryStorageStopsBeforeReservationAndProviderCall() throws Exception {
+        reset(billing);
+        when(recovery.ensureAvailable()).thenReturn(Mono.error(
+                new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "BILLING_RECOVERY_UNAVAILABLE", "journal full")));
+        StepVerifier.create(orchestrator.invoke(context, objectMapper.readTree("""
+                {"model":"test-model","messages":[]}
+                """), GatewayProtocol.OPENAI_COMPATIBLE)).expectErrorSatisfies(error ->
+                assertThat(((ApiException) error).getCode()).isEqualTo("BILLING_RECOVERY_UNAVAILABLE")).verify();
+        verifyNoInteractions(billing, providerClient);
+        verify(requestLeases).release(lease);
     }
 
     @Test

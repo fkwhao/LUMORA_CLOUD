@@ -7,6 +7,12 @@
 - 持久化数据位于部署目录下的 `data/`，例如部署到 `/opt/lumora-cloud/deploy` 后，MySQL 数据位于
   `/opt/lumora-cloud/deploy/data/mysql`。
 
+## 应用结算恢复配置
+
+2026-09-05 的结算恢复改动包含 Billing V9 迁移及 Model Gateway 文件日志。启动新版 Billing 完成迁移后，再启动新版 Model Gateway 和前端。恢复日志位于运行 Java 服务的主机；本目录的中间件 Compose 不会为本机 Java 服务提供该日志目录。
+
+通过 `LUMORA_RECOVERY_JOURNAL_DIR` 指定每个网关实例独占的持久路径，升级和重启时复用。若以后把 Java 服务放进容器，应单独挂载持久卷。完整参数、恢复步骤和管理员操作见[结算恢复与对账说明](../docs/billing-recovery-and-reconciliation.md)。
+
 ## 首次部署
 
 将整个 `deploy` 目录上传到虚拟机 `/opt/lumora-cloud`，然后进入该目录：

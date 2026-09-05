@@ -25,6 +25,13 @@ public final class BillingAmounts {
         }
     }
 
+    public static BigDecimal nonNegative(BigDecimal value, String field) {
+        if (value == null || value.signum() < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_QUOTA", field + " 不能小于 0");
+        }
+        return value.signum() == 0 ? zero() : positive(value, field);
+    }
+
     public static BigDecimal zero() {
         return BigDecimal.ZERO.setScale(SCALE);
     }

@@ -12,6 +12,10 @@ public interface IBillingCatalogService {
 
     List<PlanResponse> listPublished();
 
+    List<PlanResponse> listAllPublished();
+
+    PlanResponse purchasableVersion(Long planVersionId);
+
     PlanResponse publishVersion(Long planId, CreatePlanVersionRequest request);
 
     List<PlanResponse> versions(Long planId);

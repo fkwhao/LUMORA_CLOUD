@@ -118,7 +118,7 @@ public class ModelGatewayServiceImpl implements IModelGatewayService {
                     PricingSnapshot pricing = quotaCalculator.snapshot(model, Instant.now());
                     return new PreparedModel(
                             model, pricing,
-                            quotaCalculator.maximum(model, request.requestedMaxOutputTokens(), pricing),
+                            quotaCalculator.maximum(model, request, pricing),
                             routeSelector.orderedCandidates(model)
                     );
                 })
@@ -139,7 +139,7 @@ public class ModelGatewayServiceImpl implements IModelGatewayService {
                 prepared.pricing().pricingAt(), prepared.pricing().quotaMultiplier(), prepared.pricing().ruleName(),
                 Instant.now().plus(properties.provider().maxCallDuration()).plusSeconds(30)
         );
-        return billing.reserve(reserve)
+        return recovery.ensureAvailable().then(Mono.defer(() -> billing.reserve(reserve)))
                 .onErrorResume(error -> requestLeases.release(lease).then(Mono.error(error)))
                 .flatMap(reservation -> validateFreshReservation(reservation)
                         .onErrorResume(error -> requestLeases.release(lease).then(Mono.error(error)))
@@ -239,7 +239,7 @@ public class ModelGatewayServiceImpl implements IModelGatewayService {
     }
 
     private long estimatedTokens(ValidatedChatRequest request, ResolvedModelConfig model) {
-        long estimatedInput = Math.max(1L, request.originalBody().toString().length() / 4L);
+        long estimatedInput = quotaCalculator.estimatedInputTokens(model, request.originalBody());
         long requestedOutput = request.requestedMaxOutputTokens() == Long.MAX_VALUE
                 ? model.capabilities().maxOutputTokens()
                 : Math.min(request.requestedMaxOutputTokens(), model.capabilities().maxOutputTokens());

@@ -197,6 +197,8 @@ public class WalletServiceImpl implements IWalletService {
 
     @Override
     public void debitPurchase(Long userId, String currency, long amountMinor, String orderNo) {
+        if (amountMinor < 0) throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PURCHASE_AMOUNT", "订单金额不能小于 0");
+        if (amountMinor == 0) return;
         WalletAccountEntity account = accountMapper.findForUpdate(userId, currency(currency));
         if (account == null || accountMapper.debit(account.getId(), amountMinor) != 1) {
             throw new ApiException(HttpStatus.PAYMENT_REQUIRED, "INSUFFICIENT_WALLET_BALANCE", "钱包余额不足");

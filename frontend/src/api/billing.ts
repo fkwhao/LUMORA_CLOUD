@@ -67,6 +67,7 @@ export interface BillingOverview {
   plan?: BillingPlan;
   subscription?: BillingSubscription;
   quota?: BillingQuota;
+  scheduledSubscriptions?: Array<{ subscription: BillingSubscription; plan: BillingPlan }>;
 }
 
 export interface BillingLedgerEntry {
@@ -166,6 +167,7 @@ export interface PurchaseOrder {
   paidAt?: string;
   fulfilledAt?: string;
   subscriptionId?: string;
+  subscription?: BillingSubscription;
   mockPaymentEnabled: boolean;
   createdAt: string;
   updatedAt: string;

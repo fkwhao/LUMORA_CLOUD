@@ -32,6 +32,7 @@ lumora:
       max-error-body-bytes: 1048576
       max-buffered-response-bytes: 16777216
     recovery:
+      # Redis index retention only; unacknowledged journal evidence does not expire.
       retention: P7D
       scan-interval: PT10S
       batch-size: 100

@@ -24,6 +24,9 @@ public interface ReservationMapper extends BaseMapper<ReservationEntity> {
             """)
     int insertIdempotent(ReservationEntity entity);
 
+    @Select("SELECT * FROM billing_reservation WHERE request_id = #{requestId} LIMIT 1")
+    ReservationEntity findByRequestId(@Param("requestId") String requestId);
+
     @Select("SELECT * FROM billing_reservation WHERE request_id = #{requestId} LIMIT 1 FOR UPDATE")
     ReservationEntity findByRequestIdForUpdate(@Param("requestId") String requestId);
 
@@ -40,7 +43,7 @@ public interface ReservationMapper extends BaseMapper<ReservationEntity> {
 
     @Select("""
             SELECT request_id FROM billing_reservation
-            WHERE status = 'ACTIVE' AND expires_at <= #{now}
+            WHERE status IN ('ACTIVE', 'PENDING_RECONCILIATION') AND hold_released = FALSE AND expires_at <= #{now}
             ORDER BY expires_at
             LIMIT #{limit}
             """)
@@ -63,7 +66,7 @@ public interface ReservationMapper extends BaseMapper<ReservationEntity> {
     @Update("""
             UPDATE billing_reservation
             SET status = 'SETTLED', settled_quota = #{settledQuota}, settled_at = #{settledAt}
-            WHERE id = #{id} AND status = 'ACTIVE'
+            WHERE id = #{id} AND status IN ('ACTIVE', 'PENDING_RECONCILIATION')
             """)
     int markSettled(
             @Param("id") String id,
@@ -74,7 +77,7 @@ public interface ReservationMapper extends BaseMapper<ReservationEntity> {
     @Update("""
             UPDATE billing_reservation
             SET status = 'RELEASED', failure_reason = #{reason}, released_at = #{releasedAt}
-            WHERE id = #{id} AND status = 'ACTIVE'
+            WHERE id = #{id} AND status IN ('ACTIVE', 'PENDING_RECONCILIATION')
             """)
     int markReleased(
             @Param("id") String id,
@@ -85,7 +88,68 @@ public interface ReservationMapper extends BaseMapper<ReservationEntity> {
     @Update("""
             UPDATE billing_reservation
             SET status = 'PENDING_RECONCILIATION', failure_reason = #{reason}
-            WHERE id = #{id} AND status = 'ACTIVE'
+            WHERE id = #{id} AND status IN ('ACTIVE', 'PENDING_RECONCILIATION')
             """)
     int markPending(@Param("id") String id, @Param("reason") String reason);
+
+    @Update("""
+            UPDATE billing_reservation
+            SET status = 'PENDING_RECONCILIATION', hold_released = TRUE,
+                failure_reason = '预占超时，已返还占用额度，等待可靠用量核对'
+            WHERE id = #{id} AND status IN ('ACTIVE', 'PENDING_RECONCILIATION') AND hold_released = FALSE
+            """)
+    int expireHold(@Param("id") String id);
+
+    @Select("""
+            SELECT request_id FROM billing_reservation
+            WHERE status = 'PENDING_RECONCILIATION'
+              AND (reconciliation_next_at IS NULL OR reconciliation_next_at <= #{now})
+            ORDER BY COALESCE(reconciliation_next_at, created_at), id
+            LIMIT #{limit}
+            """)
+    java.util.List<String> findDueReconciliation(@Param("now") Instant now, @Param("limit") int limit);
+
+    @Update("""
+            UPDATE billing_reservation
+            SET reconciliation_attempts = reconciliation_attempts + 1,
+                reconciliation_checked_at = #{now}, reconciliation_next_at = #{next}, reconciliation_note = #{note}
+            WHERE id = #{id} AND status = 'PENDING_RECONCILIATION'
+            """)
+    int recordReconciliationAttempt(@Param("id") String id, @Param("now") Instant now,
+                                   @Param("next") Instant next, @Param("note") String note);
+
+    @Update("""
+            UPDATE billing_reservation
+            SET reconciliation_attempts = reconciliation_attempts + 1,
+                reconciliation_checked_at = #{now}, reconciliation_next_at = NULL, reconciliation_note = '已按记录用量自动结算'
+            WHERE id = #{id} AND status = 'SETTLED'
+            """)
+    int recordReconciliationSuccess(@Param("id") String id, @Param("now") Instant now);
+
+    @Select("""
+            <script>
+            SELECT * FROM billing_reservation
+            WHERE status IN ('PENDING_RECONCILIATION', 'SETTLED', 'RELEASED')
+            <if test="status != null">AND status = #{status}</if>
+            <if test="requestId != null">AND request_id = #{requestId}</if>
+            <if test="userId != null">AND user_id = #{userId}</if>
+            ORDER BY created_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}
+            </script>
+            """)
+    java.util.List<ReservationEntity> listReconciliation(@Param("status") String status,
+            @Param("requestId") String requestId, @Param("userId") Long userId,
+            @Param("offset") long offset, @Param("limit") int limit);
+
+    @Select("""
+            <script>
+            SELECT COUNT(*) FROM billing_reservation
+            WHERE status IN ('PENDING_RECONCILIATION', 'SETTLED', 'RELEASED')
+            <if test="status != null">AND status = #{status}</if>
+            <if test="requestId != null">AND request_id = #{requestId}</if>
+            <if test="userId != null">AND user_id = #{userId}</if>
+            </script>
+            """)
+    long countReconciliation(@Param("status") String status, @Param("requestId") String requestId,
+                             @Param("userId") Long userId);
+
 }

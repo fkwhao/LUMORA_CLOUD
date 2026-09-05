@@ -38,3 +38,9 @@ HeroUI 提供 Card、Button、Input、Chip、ProgressBar、Table、Tabs、Drawer
 pnpm install
 pnpm dev
 ```
+
+前端回归测试可独立运行，无需检出 Desktop 仓库或启动后端。测试使用 Mock API，覆盖登录刷新时的账号切换、钱包操作幂等、用户切换竞态和订单状态展示：
+
+```powershell
+pnpm test
+```

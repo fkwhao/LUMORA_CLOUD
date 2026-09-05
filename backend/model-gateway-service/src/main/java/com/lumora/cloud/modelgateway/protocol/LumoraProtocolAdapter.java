@@ -678,6 +678,7 @@ public class LumoraProtocolAdapter {
         private String resolvedModel;
         private boolean discardLine;
         private boolean completed;
+        private boolean openAiFinishObserved;
 
         private StreamTranslator(ResolvedModelConfig model, ProviderProtocol protocol, String requestId) {
             this.model = model;
@@ -710,7 +711,13 @@ public class LumoraProtocolAdapter {
             if (!discardLine && line.size() > 0) translateLine(line.toByteArray(), output);
             line.reset();
             if (terminalError != null) throw terminalError;
-            if (!completed) emitCompleted(output);
+            if (!completed) {
+                if (!openAiFinishObserved) {
+                    throw new ApiException(HttpStatus.BAD_GATEWAY, "UPSTREAM_STREAM_INCOMPLETE",
+                            "模型供应商的流在有效结束标记之前中断");
+                }
+                emitCompleted(output);
+            }
             return output;
         }
 
@@ -740,6 +747,14 @@ public class LumoraProtocolAdapter {
         }
 
         private void openAiEvent(JsonNode event, List<DataBuffer> output) {
+            if (event.hasNonNull("error")) {
+                terminalError = new ApiException(HttpStatus.BAD_GATEWAY, "UPSTREAM_STREAM_FAILED",
+                        "模型供应商返回了流式错误");
+                return;
+            }
+            if (!event.path("choices").path(0).path("finish_reason").asText("").isBlank()) {
+                openAiFinishObserved = true;
+            }
             JsonNode delta = event.path("choices").path(0).path("delta");
             emitTextDelta("reasoning_delta", firstText(delta, "reasoning_content", "reasoning"), reasoning, output);
             emitTextDelta("content_delta", outputText(delta.get("content")), content, output);

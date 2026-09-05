@@ -50,7 +50,7 @@ public class BillingAdminController {
     @GetMapping("/plans")
     public List<PlanResponse> plans() {
         access.requireAdmin();
-        return catalogService.listPublished();
+        return catalogService.listAllPublished();
     }
 
     @PostMapping("/plans")

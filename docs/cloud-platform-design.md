@@ -111,7 +111,7 @@ LUMORA_CLOUD/
 数据库结构同样遵循服务所有权：`user-service`、`billing-service` 和 `model-catalog-service` 分别
 维护 `lumora_user`、`lumora_billing` 和 `lumora_model_catalog`。建表及后续结构变更放在所属服务的
 `src/main/resources/db/migration/` 中，以 Flyway 的 `V<版本>__<说明>.sql` 脚本随服务版本演进。
-当前没有持久化职责的 Gateway 和 `model-gateway-service` 不创建业务表，也不维护其他服务的迁移。
+Gateway 和 `model-gateway-service` 不创建业务表，也不维护其他服务的迁移。Model Gateway 另在每个实例独占的持久目录保存未完成结算命令；业务账本及状态仍归 Billing 所有。恢复日志要求见[结算恢复与对账说明](billing-recovery-and-reconciliation.md)。
 
 `deploy/mysql/init/` 是部署引导目录，仅在 MySQL 数据目录为空时创建数据库并配置基础权限；它不是
 业务表版本管理机制。仓库根目录若以后增加 `database/`，只用于数据库说明、结构快照和人工运维
@@ -262,15 +262,17 @@ JSON 和 SSE。客户端必须携带稳定的 `X-Lumora-Client-Request-Id`，重
 按以下状态流转：
 
 ```text
-Gateway 可信身份 → 请求租约 → Catalog 发布快照 → Billing 最大额度预占
+Gateway 可信身份 → 请求租约 → Catalog 发布快照 → 恢复日志可写性检查 → Billing 请求额度预占
   → 路由选取/四层并发与 RPM/TPM 准入 → Provider WebClient → 权威 Usage 解析
   → Billing 实际结算 → 释放租约与并发许可
 ```
 
 请求租约和并发许可均保存在 Redis，使用 Lua 完成原子获取、续期和释放，支持多实例部署。Billing
 预占使用确定性请求 ID；如果同一请求已预占过，Model Gateway 不会再次调用供应商。供应商明确拒绝
-时释放额度；超时、连接中断、流提前结束或缺少终态 Usage 时标记待对账。Billing 暂时不可用时，
-恢复命令写入 Redis，由后台任务继续执行幂等结算、释放或待对账操作。
+时释放额度；超时、连接中断、流提前结束或缺少终态 Usage 时标记待对账。结算、释放或待对账命令
+先写入实例独占的持久化文件日志，再调用 Billing；Redis 提供辅助调度。Billing 暂时不可用时后台幂等重试，
+达到重试上限后保留证据并暂停，管理员核对后可恢复投递。预占过期只返还占用额度并保留待对账状态，
+已有可靠用量可按原额度桶补结算；管理端提供自动核对、批量处理及审计工作台。
 
 上游选路先按 `priority` 从小到大分组，同一优先级内按 `weight` 做加权随机；账号和路由的容量值为空
 表示平台不额外限制。Redis 并发控制依次执行用户并发、可选逻辑模型总并发、供应商账号总并发和单路由
@@ -287,7 +289,7 @@ RPM/TPM 已满、熔断、鉴权失败、429、超时、连接失败或 5xx 时�
 执行入口 QPS 流控；Model Gateway → Catalog/Billing、Billing → Catalog 的 OpenFeign 方法使用 Nacos
 `degrade` JSON 执行异常比例熔断。Feign Fallback 只负责把 Sentinel 阻断转换为明确的 503 领域错误，
 原始下游 HTTP 业务错误继续按原语义处理，绝不返回伪造的模型配置、额度预占、结算或释放结果。Billing
-预占调用被保护时在调用上游前失败；已产生的结算/释放命令仍由 Redis 恢复队列幂等重试。
+预占调用被保护时在调用上游前失败；已产生的结算/释放命令由持久化日志和辅助 Redis 队列幂等重试。
 
 Sentinel 的全局 `DegradeRuleManager` 同时承载 Nacos 静态 Feign 规则和按路由动态生成的规则。Nacos
 刷新可能替换内存规则集合，因此 Model Gateway 在路由进入前校验并重新合并当前动态规则，确保配置
@@ -297,8 +299,9 @@ Cloud 支持 `OPENAI_COMPATIBLE`、`RESPONSES` 和 `ANTHROPIC` Provider。管理
 提交 API Key；API Key 只以密文进入凭据表，不进入模型版本、Redis 发布快照、Nacos、日志或下游响应。
 旧环境变量引用仅作为已有 Provider 的兼容回退。凭据轮换保持引用稳定，不要求重新发布模型；Model
 Gateway 遇到上游 401/403 会清除短时凭据缓存并重新读取后重试一次。模型计价至少配置
-一种正向 Token 单价或最小请求额度，预占上限按上下文窗口、最大输出和最高相关单价保守计算，实际
-扣减以供应商终态 Usage 为准。Model Gateway 在请求开始时只使用套餐额度策略自己的时区匹配一次额度
+一种正向 Token 单价或最小请求额度。普通文本的预占按完整请求体量及余量估算输入，保留最大输出、
+最高相关单价和最低额度；图片、文件、隐藏上下文及托管工具等请求回退到完整上下文窗口。请求估算不等于
+供应商 tokenizer 或实际费用，最终扣减以供应商终态 Usage 为准；超估算用量保留待对账并保护其他请求额度。Model Gateway 在请求开始时只使用套餐额度策略自己的时区匹配一次额度
 规则，并把 `pricing_at`、额度倍率和额度规则名称作为预占快照写入 Billing；预占和最终结算使用同一
 倍率。流式响应即使跨越边界也不重新匹配，退款、冲正和待对账都以原预占快照为准。上游成本策略拥有
 独立时间表，不参与套餐额度预占或扣减。

@@ -12,6 +12,7 @@ frontend/.env.local
 frontend/*.tsbuildinfo
 
 deploy/data/
+**/data/billing-recovery/
 
 .env
 .env.*

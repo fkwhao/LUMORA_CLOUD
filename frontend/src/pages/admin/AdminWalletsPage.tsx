@@ -1,6 +1,6 @@
 import { Button, Card, Chip, Input, Label, ListBox, Select, TextArea, TextField } from "@heroui/react";
 import { Landmark, RefreshCw, SlidersHorizontal } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClientError } from "../../api/auth";
 import { adjustAdminWallet, getAdminWallet, type WalletOverview } from "../../api/billing";
@@ -24,6 +24,12 @@ export function AdminWalletsPage() {
   const [walletLoading, setWalletLoading] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const walletRequest = useRef(0);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const submitting = useRef(false);
+  const operationKeys = useRef(new Map<string, string>());
 
   const selected = useMemo(
     () => users.find((user) => user.id === selectedId) ?? null,
@@ -40,42 +46,74 @@ export function AdminWalletsPage() {
       setWalletLoading(false);
       return;
     }
-    let active = true;
+    setWallet(null);
+    setNotice(null);
+    void loadWallet(selectedId);
+    return () => { walletRequest.current += 1; };
+  }, [selectedId]);
+
+  async function loadWallet(userId: number, failurePrefix = "") {
+    const request = ++walletRequest.current;
     setWalletLoading(true);
     setError(null);
-    void getAdminWallet(selectedId)
-      .then((data) => { if (active) setWallet(data); })
-      .catch((reason) => { if (active) setError(message(reason)); })
-      .finally(() => { if (active) setWalletLoading(false); });
-    return () => { active = false; };
-  }, [selectedId]);
+    try {
+      const data = await getAdminWallet(userId);
+      if (request === walletRequest.current && selectedIdRef.current === userId) setWallet(data);
+    } catch (reason) {
+      if (request === walletRequest.current && selectedIdRef.current === userId) {
+        setError(failurePrefix + message(reason));
+      }
+    } finally {
+      if (request === walletRequest.current && selectedIdRef.current === userId) setWalletLoading(false);
+    }
+  }
 
   async function refresh() {
     void reload();
-    if (!selected) return;
-    setWalletLoading(true); setError(null);
-    try { setWallet(await getAdminWallet(selected.id)); }
-    catch (reason) { setError(message(reason)); }
-    finally { setWalletLoading(false); }
+    if (selected) await loadWallet(selected.id);
   }
 
   async function adjust(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!selected) return;
+    event.preventDefault();
+    if (!selected || submitting.current) return;
     const form = event.currentTarget;
     const data = new FormData(form);
-    const amount = Number(data.get("amount"));
-    if (!Number.isFinite(amount) || amount === 0) { setError("调整金额不能为 0"); return; }
-    setPending(true); setError(null);
+    const amountDelta = Math.round(Number(data.get("amount")) * 100);
+    if (!Number.isSafeInteger(amountDelta) || amountDelta === 0) { setError("调整金额必须是有效的非零金额"); return; }
+    const input = {
+      userId: selected.id,
+      amountDelta,
+      currency: String(data.get("currency") || "CNY"),
+      reason: String(data.get("reason") || "").trim(),
+    };
+    const signature = JSON.stringify(input);
+    const key = operationKeys.current.get(signature) ?? crypto.randomUUID();
+    operationKeys.current.set(signature, key);
+    submitting.current = true;
+    setPending(true); setError(null); setNotice(null);
     try {
-      await adjustAdminWallet({ userId: selected.id, amountDelta: Math.round(amount * 100), currency: String(data.get("currency") || "CNY"), reason: String(data.get("reason") || "") }, crypto.randomUUID());
-      setWallet(await getAdminWallet(selected.id)); form.reset();
-    } catch (reason) { setError(message(reason)); }
-    finally { setPending(false); }
+      await adjustAdminWallet(input, key);
+      operationKeys.current.delete(signature);
+      form.reset();
+      setNotice(`${selected.email} 的余额已调整成功`);
+      if (selectedIdRef.current === input.userId) {
+        await loadWallet(input.userId, "调整已成功，仅钱包刷新失败：");
+      }
+    } catch (reason) {
+      // Keep the key when the server may have committed but its reply was lost.
+      if (reason instanceof ApiClientError && reason.status >= 400 && reason.status < 500
+          && reason.status !== 408 && reason.status !== 429) operationKeys.current.delete(signature);
+      setError(message(reason));
+    } finally {
+      submitting.current = false;
+      setPending(false);
+    }
   }
 
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="mb-1 text-sm text-muted">资金运营</p><h1 className="text-2xl font-semibold tracking-tight">用户钱包</h1><p className="mt-2 text-sm text-muted">查询余额与流水，并通过带原因和幂等键的调整单进行人工增减。</p></div><Button isDisabled={loading || walletLoading} onPress={() => void refresh()} variant="secondary"><RefreshCw size={16} />刷新</Button></header>
+      {notice && <div className="rounded-xl bg-success-soft px-4 py-3 text-sm text-success">{notice}</div>}
       {(error || searchError) && <div className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">{error ?? searchError}</div>}
       <div className="max-w-xl space-y-2"><TextField fullWidth><Label>查找用户</Label><Input fullWidth onChange={(event) => setQuery(event.target.value)} placeholder="邮箱或显示名称" value={query} /></TextField><p className={`text-xs ${queryIsValid ? "text-muted" : "text-warning"}`}>{!queryIsValid ? "请输入至少 2 个字符；清空可查看最近用户。" : loading ? "正在搜索…" : `已加载 ${users.length} 个用户，输入后会自动搜索。`}</p></div>
 

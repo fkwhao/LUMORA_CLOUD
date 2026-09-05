@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
-import { restoreSession, type UserProfile } from "../api/auth";
+import { onSessionInvalidated, restoreSession, type UserProfile } from "../api/auth";
 import { AppShell } from "../components/AppShell";
 import { resolveRoute } from "./routes";
 
@@ -11,6 +11,7 @@ const ModelCatalogPage = lazy(() => import("../pages/admin/ModelCatalogPage").th
 const ModelProvidersPage = lazy(() => import("../pages/admin/ModelProvidersPage").then((module) => ({ default: module.ModelProvidersPage })));
 const UserManagementPage = lazy(() => import("../pages/admin/UserManagementPage").then((module) => ({ default: module.UserManagementPage })));
 const AdminWalletsPage = lazy(() => import("../pages/admin/AdminWalletsPage").then((module) => ({ default: module.AdminWalletsPage })));
+const BillingReconciliationPage = lazy(() => import("../pages/admin/BillingReconciliationPage").then((module) => ({ default: module.BillingReconciliationPage })));
 const GatewayDiagnosticsPage = lazy(() => import("../pages/admin/GatewayDiagnosticsPage").then((module) => ({ default: module.GatewayDiagnosticsPage })));
 const ConsoleOverviewPage = lazy(() => import("../pages/console/ConsoleOverviewPage").then((module) => ({ default: module.ConsoleOverviewPage })));
 const BillingHistoryPage = lazy(() => import("../pages/console/BillingHistoryPage").then((module) => ({ default: module.BillingHistoryPage })));
@@ -20,8 +21,13 @@ const WalletPage = lazy(() => import("../pages/console/WalletPage").then((module
 
 export function App() {
   const route = resolveRoute(window.location.pathname);
-  const [status, setStatus] = useState<"loading" | "authenticated" | "anonymous" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "authenticated" | "anonymous" | "error" | "changed">("loading");
   const [user, setUser] = useState<UserProfile | null>(null);
+
+  useEffect(() => onSessionInvalidated(() => {
+    setUser(null);
+    setStatus("changed");
+  }), []);
 
   useEffect(() => {
     let active = true;
@@ -53,6 +59,7 @@ export function App() {
   }, [route, status, user]);
 
   if (status === "loading") return <SessionMessage message="正在恢复登录状态…" />;
+  if (status === "changed") return <div className="grid min-h-screen place-content-center gap-4 text-center"><p>登录状态已变化，请确认账号后重新操作。</p><button onClick={() => window.location.reload()} type="button">刷新并确认账号</button></div>;
   if (status === "error") return <SessionMessage message="暂时无法连接云端服务，请稍后刷新页面。" />;
 
   if (route === "login") {
@@ -90,6 +97,10 @@ export function App() {
 
   if (route === "admin-wallets") {
     return <AppShell active="wallets" area="admin" user={user}><PageSuspense><AdminWalletsPage /></PageSuspense></AppShell>;
+  }
+
+  if (route === "admin-reconciliation") {
+    return <AppShell active="reconciliation" area="admin" user={user}><PageSuspense><BillingReconciliationPage /></PageSuspense></AppShell>;
   }
 
   if (route === "admin-gateway") {
