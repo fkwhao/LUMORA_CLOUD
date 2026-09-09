@@ -1,6 +1,7 @@
 package com.lumora.cloud.billing.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lumora.cloud.billing.cache.PlanConfigurationCache;
 import com.lumora.cloud.api.billing.BillingContracts.*;
 import com.lumora.cloud.api.catalog.CatalogClient;
 import com.lumora.cloud.api.catalog.CatalogContracts.PublishedModelReference;
@@ -147,9 +148,12 @@ class IssueListBillingReproductionTest {
         final PlanVersionModelMapper models=mock(PlanVersionModelMapper.class);
         final CatalogClient modelCatalog=mock(CatalogClient.class);
         final PlanModelSelectionService selection=new PlanModelSelectionService(modelCatalog);
-        final BillingCatalogServiceImpl service=new BillingCatalogServiceImpl(plans,versions,models,selection);
+        final PlanConfigurationCache cache=mock(PlanConfigurationCache.class);
+        final BillingCatalogServiceImpl service=new BillingCatalogServiceImpl(plans,versions,models,selection,cache);
         BillingPlanEntity plan;PlanVersionEntity version;
         CatalogFixture(){
+            when(cache.published(any())).thenAnswer(i->i.<java.util.function.Supplier<List<PlanResponse>>>getArgument(0).get());
+            when(cache.version(anyLong(),any())).thenAnswer(i->i.<java.util.function.Supplier<PlanResponse>>getArgument(1).get());
             when(modelCatalog.publishedModelReferences()).thenReturn(List.of(new PublishedModelReference("model-a","A")));
             when(plans.insert(any(BillingPlanEntity.class))).thenAnswer(i->{plan=i.getArgument(0);set(plan,"id",10L);return 1;});
             when(versions.insert(any(PlanVersionEntity.class))).thenAnswer(i->{version=i.getArgument(0);set(version,"id",20L);return 1;});

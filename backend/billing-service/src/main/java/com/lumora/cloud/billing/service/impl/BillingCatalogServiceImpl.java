@@ -1,6 +1,7 @@
 package com.lumora.cloud.billing.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.lumora.cloud.billing.cache.PlanConfigurationCache;
 import com.lumora.cloud.billing.domain.enums.PlanStatus;
 import com.lumora.cloud.billing.error.ApiException;
 import com.lumora.cloud.billing.domain.entity.plan.BillingPlanEntity;
@@ -34,6 +35,7 @@ public class BillingCatalogServiceImpl implements IBillingCatalogService {
     private final PlanVersionMapper versionMapper;
     private final PlanVersionModelMapper versionModelMapper;
     private final PlanModelSelectionService modelSelection;
+    private final PlanConfigurationCache cache;
 
     @Transactional
     public PlanResponse create(CreatePlanRequest request) {
@@ -59,17 +61,20 @@ public class BillingCatalogServiceImpl implements IBillingCatalogService {
         );
         versionMapper.insert(version);
         insertModels(version.getId(), modelCodes);
+        cache.evictAfterCommit();
         return response(plan, version);
     }
 
-    @Transactional(readOnly = true)
     public List<PlanResponse> listPublished() {
         java.util.Set<String> available = modelSelection.availableModelCodes();
         return listAllPublished().stream().filter(plan -> hasAvailableModel(plan, available)).toList();
     }
 
-    @Transactional(readOnly = true)
     public List<PlanResponse> listAllPublished() {
+        return cache.published(this::loadAllPublished);
+    }
+
+    private List<PlanResponse> loadAllPublished() {
         return planMapper.selectList(Wrappers.<BillingPlanEntity>lambdaQuery()
                         .eq(BillingPlanEntity::getStatus, PlanStatus.ACTIVE.name())
                         .orderByAsc(BillingPlanEntity::getId))
@@ -110,6 +115,7 @@ public class BillingCatalogServiceImpl implements IBillingCatalogService {
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "PLAN_VERSION_CONFLICT", "套餐版本已被其他操作发布");
         }
+        cache.evictAfterCommit();
         return response(plan, version);
     }
 
@@ -124,8 +130,11 @@ public class BillingCatalogServiceImpl implements IBillingCatalogService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
     public PlanResponse publishedVersion(Long planVersionId) {
+        return cache.version(planVersionId, () -> loadPublishedVersion(planVersionId));
+    }
+
+    private PlanResponse loadPublishedVersion(Long planVersionId) {
         PlanVersionEntity version = versionMapper.findPublishedById(planVersionId);
         if (version == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PLAN_VERSION_NOT_FOUND", "套餐版本不存在或未发布");
@@ -137,7 +146,6 @@ public class BillingCatalogServiceImpl implements IBillingCatalogService {
         return response(plan, version);
     }
 
-    @Transactional(readOnly = true)
     public PlanResponse purchasableVersion(Long planVersionId) {
         PlanResponse plan = publishedVersion(planVersionId);
         if (!hasAvailableModel(plan, modelSelection.availableModelCodes())) {

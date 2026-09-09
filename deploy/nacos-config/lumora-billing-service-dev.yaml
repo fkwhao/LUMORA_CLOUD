@@ -12,6 +12,7 @@ logging:
 
 lumora:
   billing:
+    plan-cache-ttl: PT5M
     payment:
       mock-enabled: true
       order-ttl: PT30M
